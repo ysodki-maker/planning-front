@@ -1,0 +1,60 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(17, 17, 17, 0.45);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s4);
+}
+
+.modal {
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: modalIn 180ms ease forwards;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s6) var(--s6) 0;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: var(--s4);
+}
+
+.title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--bg-panel);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: background var(--ease), color var(--ease);
+}
+
+.close:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.body {
+  padding: var(--s6);
+}

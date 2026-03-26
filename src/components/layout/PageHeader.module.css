@@ -1,0 +1,30 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s8) var(--s8) var(--s6);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-white);
+}
+
+.title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: var(--s1);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-shrink: 0;
+}
