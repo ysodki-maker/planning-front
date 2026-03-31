@@ -1,159 +1,338 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { projectsApi } from '../api/projects.api';
 import { StatusBadge }  from '../components/common/Badge';
-import PageHeader        from '../components/layout/PageHeader';
-import Button            from '../components/common/Button';
-import Icon              from '../components/common/Icon';
 import { fmtDate, fmtTimeRange } from '../utils/helpers';
 import { STATUS_CONFIG } from '../utils/constants';
 import styles from './CalendarPage.module.css';
 
-const DAY_NAMES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const today     = new Date();
+const DAY_NAMES      = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const DAY_NAMES_LONG = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const today          = new Date();
 
-function daysInMonth(year, month) {
-  return new Date(year, month + 1, 0).getDate();
-}
-function firstWeekday(year, month) {
-  return (new Date(year, month, 1).getDay() + 6) % 7;
+// ── Densité des cellules ──
+const DENSITY_CONFIG = {
+  compact:     { cellH: 80,  barH: 18, dayNumH: 26, maxLanes: 2 },
+  comfortable: { cellH: 110, barH: 22, dayNumH: 32, maxLanes: 3 },
+};
+
+// ── Palette couleurs projets ──
+const PROJECT_COLORS = [
+  '#6366f1','#0ea5e9','#10b981','#f59e0b',
+  '#ef4444','#8b5cf6','#06b6d4','#f97316',
+  '#84cc16','#ec4899','#14b8a6','#a855f7',
+];
+function projectColor(id) {
+  const hash = String(id).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return PROJECT_COLORS[hash % PROJECT_COLORS.length];
 }
 
-// ✅ Fix timezone : utilise l'heure locale au lieu de UTC
+// ── Helpers dates ──
+function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
+function firstWeekday(year, month) { return (new Date(year, month, 1).getDay() + 6) % 7; }
 function isoStr(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+function getMonday(date) {
+  const d = new Date(date);
+  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+function parseIso(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// ── Fetch helper (réutilisé pour prefetch) ──
+function fetchCalendar(year, month) {
+  const start = isoStr(new Date(year, month, 1));
+  const end   = isoStr(new Date(year, month + 1, 0));
+  return projectsApi.getCalendar({ start, end }).then(({ data }) =>
+    data.data.projects.map(p => ({
+      ...p,
+      start_date: p.start_date ? p.start_date.split('T')[0] : p.start_date,
+      end_date:   p.end_date   ? p.end_date.split('T')[0]   : p.end_date,
+      _color:     p._color ?? projectColor(p.id),
+    }))
+  );
+}
+
+// ── Segments barres vue mois ──
+function buildMonthSegments(projects, year, month, maxLanes) {
+  const firstDay = new Date(year, month, 1);
+  const lastDay  = new Date(year, month + 1, 0);
+  const padding  = firstWeekday(year, month);
+  const segments = [];
+
+  for (const p of projects) {
+    const pStart   = parseIso(p.start_date);
+    const pEnd     = parseIso(p.end_date);
+    const visStart = pStart < firstDay ? firstDay : pStart;
+    const visEnd   = pEnd   > lastDay  ? lastDay  : pEnd;
+    if (visStart > visEnd) continue;
+
+    let cursor = new Date(visStart);
+    while (cursor <= visEnd) {
+      const dayOfMonth = cursor.getDate();
+      const cellIndex  = dayOfMonth - 1 + padding;
+      const weekRow    = Math.floor(cellIndex / 7);
+      const colStart   = cellIndex % 7;
+      const endOfWeek  = new Date(cursor);
+      endOfWeek.setDate(cursor.getDate() + (6 - colStart));
+      const segEnd  = visEnd < endOfWeek ? visEnd : endOfWeek;
+      const colSpan = Math.round((segEnd - cursor) / 86400000) + 1;
+      const isStart = isoStr(cursor) === isoStr(visStart);
+      const isEnd   = isoStr(segEnd) === isoStr(visEnd);
+
+      segments.push({ project: p, weekRow, colStart, colSpan, isStart, isEnd });
+
+      cursor = new Date(segEnd);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  // Attribution des lanes
+  segments.sort((a, b) =>
+    a.weekRow !== b.weekRow ? a.weekRow - b.weekRow : a.colStart - b.colStart
+  );
+
+  // Map : weekRow → day(0-6) → liste de projets (pour le compteur +N)
+  const dayProjectMap = {}; // "weekRow-col" → Set de project ids
+
+  const weekLaneMap = {};
+  for (const seg of segments) {
+    if (!weekLaneMap[seg.weekRow]) weekLaneMap[seg.weekRow] = [];
+    const occupied = weekLaneMap[seg.weekRow];
+    const colEnd   = seg.colStart + seg.colSpan - 1;
+    let lane = 0;
+    while (true) {
+      const conflict = occupied.some(
+        o => o.lane === lane && o.colStart <= colEnd && o.colEnd >= seg.colStart
+      );
+      if (!conflict) break;
+      lane++;
+    }
+    occupied.push({ colStart: seg.colStart, colEnd, lane });
+    seg.lane = lane;
+
+    // Enregistre dans dayProjectMap pour chaque jour du segment
+    for (let col = seg.colStart; col <= colEnd; col++) {
+      const key = `${seg.weekRow}-${col}`;
+      if (!dayProjectMap[key]) dayProjectMap[key] = [];
+      if (!dayProjectMap[key].find(x => x.id === seg.project.id)) {
+        dayProjectMap[key].push(seg.project);
+      }
+    }
+  }
+
+  // Segments visibles (lane < maxLanes) et cachés
+  const visible = segments.filter(s => s.lane < maxLanes);
+  const hidden  = segments.filter(s => s.lane >= maxLanes);
+
+  return { visible, hidden, dayProjectMap };
+}
 
 export default function CalendarPage() {
+  const [view,          setView]          = useState('month');
   const [current,       setCurrent]       = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [projects,      setProjects]      = useState([]);
+  const [cache,         setCache]         = useState({}); // prefetch cache : "year-month" → projects[]
   const [loading,       setLoading]       = useState(true);
   const [tooltip,       setTooltip]       = useState(null);
+  const [popover,       setPopover]       = useState(null); // { projects, x, y }
   const [activeFilters, setActiveFilters] = useState(new Set());
   const [dragProject,   setDragProject]   = useState(null);
   const [dragOverDay,   setDragOverDay]   = useState(null);
+  const [density,       setDensity]       = useState('comfortable'); // 'compact' | 'comfortable'
+  const [hoveredWeek,   setHoveredWeek]   = useState(null); // weekRow surbrillé
+
   const tooltipRef = useRef(null);
+  const popoverRef = useRef(null);
 
   const year  = current.getFullYear();
   const month = current.getMonth();
+  const densityCfg = DENSITY_CONFIG[density];
 
-  useEffect(() => {
-    setLoading(true);
-    const start = isoStr(new Date(year, month, 1));
-    const end   = isoStr(new Date(year, month + 1, 0));
-    projectsApi.getCalendar({ start, end })
-      .then(({ data }) => {
-        // Normalise les dates : supprime la partie heure/timezone si présente
-        // ex: "2026-03-26T00:00:00.000Z" → "2026-03-26"
-        const projects = data.data.projects.map(p => ({
-          ...p,
-          start_date: p.start_date ? p.start_date.split('T')[0] : p.start_date,
-          end_date:   p.end_date   ? p.end_date.split('T')[0]   : p.end_date,
-        }));
-        setProjects(projects);
+  const weekDays = view === 'week'
+    ? Array.from({ length: 7 }, (_, i) => {
+        const mon = getMonday(current);
+        return new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
       })
-      .catch(() => setProjects([]))
-      .finally(() => setLoading(false));
-  }, [year, month]);
+    : [];
 
-  const prevMonth = () => setCurrent(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrent(new Date(year, month + 1, 1));
-  const goToday   = () => setCurrent(new Date(today.getFullYear(), today.getMonth(), 1));
+  // ── Clé de cache ──
+  const cacheKey = (y, m) => `${y}-${m}`;
+
+  // ── Fetch principal ──
+  useEffect(() => {
+    if (view === 'week') {
+      // Vue semaine : fetch normal sans cache
+      setLoading(true);
+      const mon = getMonday(current);
+      const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+      projectsApi.getCalendar({ start: isoStr(mon), end: isoStr(sun) })
+        .then(({ data }) => setProjects(data.data.projects.map(p => ({
+          ...p,
+          start_date: p.start_date?.split('T')[0],
+          end_date:   p.end_date?.split('T')[0],
+          _color:     p._color ?? projectColor(p.id),
+        }))))
+        .catch(() => setProjects([]))
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    const key = cacheKey(year, month);
+    if (cache[key]) {
+      // Données déjà en cache → affichage instantané
+      setProjects(cache[key]);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      fetchCalendar(year, month)
+        .then(list => {
+          setProjects(list);
+          setCache(prev => ({ ...prev, [key]: list }));
+        })
+        .catch(() => setProjects([]))
+        .finally(() => setLoading(false));
+    }
+  }, [year, month, view, current]);
+
+  // ── Prefetch mois précédent et suivant ──
+  useEffect(() => {
+    if (view !== 'month') return;
+
+    const neighbors = [
+      { y: month === 0  ? year - 1 : year, m: month === 0  ? 11 : month - 1 },
+      { y: month === 11 ? year + 1 : year, m: month === 11 ? 0  : month + 1 },
+    ];
+
+    neighbors.forEach(({ y, m }) => {
+      const key = cacheKey(y, m);
+      if (cache[key]) return; // déjà en cache
+      fetchCalendar(y, m)
+        .then(list => setCache(prev => ({ ...prev, [key]: list })))
+        .catch(() => {});
+    });
+  }, [year, month, view]);
+
+  // ── Navigation ──
+  const prevPeriod = () => {
+    if (view === 'week') setCurrent(prev => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 7));
+    else setCurrent(new Date(year, month - 1, 1));
+  };
+  const nextPeriod = () => {
+    if (view === 'week') setCurrent(prev => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 7));
+    else setCurrent(new Date(year, month + 1, 1));
+  };
+  const goToday = () => {
+    if (view === 'week') setCurrent(getMonday(today));
+    else setCurrent(new Date(today.getFullYear(), today.getMonth(), 1));
+  };
+  const handleSetView = (v) => {
+    setView(v);
+    setCurrent(v === 'week' ? getMonday(today) : new Date(today.getFullYear(), today.getMonth(), 1));
+  };
+
+  // ── Label de période ──
+  const monthLabel  = current.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const periodLabel = view === 'week' && weekDays.length
+    ? (() => {
+        const s = weekDays[0], e = weekDays[6];
+        return s.getMonth() === e.getMonth()
+          ? `${s.getDate()} – ${e.getDate()} ${e.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
+          : `${s.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${e.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      })()
+    : monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
 
   const totalDays   = daysInMonth(year, month);
   const paddingDays = firstWeekday(year, month);
-  const monthLabel  = current.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const totalWeeks  = Math.ceil((paddingDays + totalDays) / 7);
 
-  const toggleFilter = (key) => {
-    setActiveFilters(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  };
-
+  // ── Filtres ──
+  const toggleFilter = (key) => setActiveFilters(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
   const filteredProjects = activeFilters.size === 0
     ? projects
     : projects.filter(p => activeFilters.has(p.status));
 
-  const projectsForDay = (day) => {
-    const d = isoStr(new Date(year, month, day));
-    return filteredProjects.filter(p => p.start_date <= d && p.end_date >= d);
+  // ── Segments vue mois ──
+  const { visible: visibleSegs, hidden: hiddenSegs, dayProjectMap } = useMemo(
+    () => buildMonthSegments(filteredProjects, year, month, densityCfg.maxLanes),
+    [filteredProjects, year, month, densityCfg.maxLanes]
+  );
+
+  // Compteur +N par cellule : nb de projets cachés sur ce jour
+  const hiddenCountForDay = (weekRow, col) => {
+    const key      = `${weekRow}-${col}`;
+    const allProjs = dayProjectMap[key] || [];
+    const visIds   = new Set(
+      visibleSegs
+        .filter(s => s.weekRow === weekRow && s.colStart <= col && s.colStart + s.colSpan - 1 >= col)
+        .map(s => s.project.id)
+    );
+    return allProjs.filter(p => !visIds.has(p.id));
   };
 
-  // Dismiss tooltip on outside click
+  const projectsForDate = (iso) =>
+    filteredProjects.filter(p => p.start_date <= iso && p.end_date >= iso);
+
+  // ── Dismiss tooltip & popover ──
   useEffect(() => {
     const fn = (e) => {
-      if (tooltipRef.current && !tooltipRef.current.contains(e.target)) {
-        setTooltip(null);
-      }
+      if (tooltipRef.current && !tooltipRef.current.contains(e.target)) setTooltip(null);
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) setPopover(null);
     };
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, []);
 
-  // --- Drag & drop handlers ---
+  // ── Drag & drop ──
   const handleDragStart = useCallback((e, project) => {
     setDragProject(project);
     e.dataTransfer.effectAllowed = 'move';
   }, []);
-
   const handleDragOver = useCallback((e, day) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverDay(day);
   }, []);
-
   const handleDrop = useCallback((e, day) => {
     e.preventDefault();
     if (!dragProject) return;
-
-    // ✅ Fix timezone pour le drag & drop aussi
-    const startDate = new Date(dragProject.start_date + 'T00:00:00');
-    const endDate   = new Date(dragProject.end_date   + 'T00:00:00');
-    const durationDays = Math.round((endDate - startDate) / 86400000);
-
+    const dur      = Math.round((parseIso(dragProject.end_date) - parseIso(dragProject.start_date)) / 86400000);
     const newStart = isoStr(new Date(year, month, day));
-    const newEnd   = isoStr(new Date(year, month, day + durationDays));
-
-    // Snapshot for rollback
+    const newEnd   = isoStr(new Date(year, month, day + dur));
     const previous = dragProject;
-
-    // Optimistic update
-    setProjects(prev =>
-      prev.map(p =>
-        p.id === dragProject.id
-          ? { ...p, start_date: newStart, end_date: newEnd }
-          : p
-      )
-    );
-
+    setProjects(prev => prev.map(p =>
+      p.id === dragProject.id ? { ...p, start_date: newStart, end_date: newEnd } : p
+    ));
     setDragProject(null);
     setDragOverDay(null);
-
-    // Persist to API — rollback on failure
-    projectsApi
-      .update(previous.id, { start_date: newStart, end_date: newEnd })
-      .catch(() => {
-        setProjects(prev =>
-          prev.map(p =>
-            p.id === previous.id
-              ? { ...p, start_date: previous.start_date, end_date: previous.end_date }
-              : p
-          )
-        );
-      });
+    projectsApi.update(previous.id, { start_date: newStart, end_date: newEnd })
+      .catch(() => setProjects(prev => prev.map(p =>
+        p.id === previous.id ? { ...p, start_date: previous.start_date, end_date: previous.end_date } : p
+      )));
   }, [dragProject, year, month]);
-
   const handleDragEnd = useCallback(() => {
     setDragProject(null);
     setDragOverDay(null);
   }, []);
 
+  // ── Rendu barres semaine dans la grille ──
+  // Pour la surbrillance : on calcule weekRow de chaque cellule
+  const cellWeekRow = (day) => Math.floor((day - 1 + paddingDays) / 7);
+
   return (
     <div className={styles.page}>
+
       {/* ── Header ── */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
@@ -162,19 +341,45 @@ export default function CalendarPage() {
         </div>
         <div className={styles.headerControls}>
           <button className={styles.todayBtn} onClick={goToday}>Aujourd'hui</button>
-          <div className={styles.navGroup}>
-            <button className={styles.navBtn} onClick={prevMonth} aria-label="Mois précédent">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+
+          {/* Densité */}
+          <div className={styles.viewToggle}>
+            <button
+              className={`${styles.viewBtn} ${density === 'compact' ? styles.viewBtnActive : ''}`}
+              onClick={() => setDensity('compact')}
+              title="Vue compacte"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="12" height="3" rx="1" fill="currentColor"/>
+                <rect x="1" y="5.5" width="12" height="3" rx="1" fill="currentColor"/>
+                <rect x="1" y="10" width="12" height="3" rx="1" fill="currentColor"/>
               </svg>
             </button>
-            <span className={styles.monthLabel}>
-              {monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}
-            </span>
-            <button className={styles.navBtn} onClick={nextMonth} aria-label="Mois suivant">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+            <button
+              className={`${styles.viewBtn} ${density === 'comfortable' ? styles.viewBtnActive : ''}`}
+              onClick={() => setDensity('comfortable')}
+              title="Vue confortable"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="12" height="5" rx="1" fill="currentColor"/>
+                <rect x="1" y="8" width="12" height="5" rx="1" fill="currentColor"/>
               </svg>
+            </button>
+          </div>
+
+          {/* Vue mois / semaine */}
+          <div className={styles.viewToggle}>
+            <button className={`${styles.viewBtn} ${view === 'month' ? styles.viewBtnActive : ''}`} onClick={() => handleSetView('month')}>Mois</button>
+            <button className={`${styles.viewBtn} ${view === 'week'  ? styles.viewBtnActive : ''}`} onClick={() => handleSetView('week')}>Semaine</button>
+          </div>
+
+          <div className={styles.navGroup}>
+            <button className={styles.navBtn} onClick={prevPeriod} aria-label="Période précédente">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <span className={styles.monthLabel}>{periodLabel}</span>
+            <button className={styles.navBtn} onClick={nextPeriod} aria-label="Période suivante">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
         </div>
@@ -203,108 +408,234 @@ export default function CalendarPage() {
           );
         })}
         {activeFilters.size > 0 && (
-          <button className={styles.clearBtn} onClick={() => setActiveFilters(new Set())}>
-            Tout afficher
-          </button>
+          <button className={styles.clearBtn} onClick={() => setActiveFilters(new Set())}>Tout afficher</button>
         )}
       </div>
 
       {/* ── Calendar ── */}
       <div className={styles.calendarWrap}>
         {loading ? (
-          <div className={styles.loader}>
-            <div className={styles.spinnerRing} />
-          </div>
-        ) : (
-          <div className={styles.grid}>
-            {/* Day headers */}
-            {DAY_NAMES.map(d => (
-              <div key={d} className={styles.dayHeader}>{d}</div>
-            ))}
+          <div className={styles.loader}><div className={styles.spinnerRing} /></div>
+        ) : view === 'week' ? (
 
-            {/* Padding */}
-            {Array.from({ length: paddingDays }).map((_, i) => (
-              <div key={`pad-${i}`} className={styles.cellEmpty} />
-            ))}
-
-            {/* Day cells */}
-            {Array.from({ length: totalDays }, (_, i) => i + 1).map(day => {
-              const projs   = projectsForDay(day);
-              const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-              const isDragOver = dragOverDay === day;
-
+          /* ════ VUE SEMAINE ════ */
+          <div className={styles.weekWrap}>
+            {weekDays.map((day, i) => {
+              const iso     = isoStr(day);
+              const isToday = iso === isoStr(today);
+              const projs   = projectsForDate(iso);
               return (
                 <div
-                  key={day}
-                  className={[
-                    styles.cell,
-                    isToday    ? styles.cellToday    : '',
-                    isDragOver ? styles.cellDragOver : '',
-                  ].join(' ')}
-                  onDragOver={e => handleDragOver(e, day)}
-                  onDrop={e => handleDrop(e, day)}
+                  key={i}
+                  className={[styles.weekRow, isToday ? styles.weekRowToday : '', dragOverDay === day.getDate() ? styles.cellDragOver : ''].join(' ')}
+                  onDragOver={e => handleDragOver(e, day.getDate())}
+                  onDrop={e => handleDrop(e, day.getDate())}
                 >
-                  <div className={`${styles.dayNum} ${isToday ? styles.dayNumToday : ''}`}>
-                    {day}
+                  <div className={styles.weekDayMeta}>
+                    <span className={styles.weekDayName}>{DAY_NAMES_LONG[i]}</span>
+                    <span className={`${styles.weekDayNum} ${isToday ? styles.dayNumToday : ''}`}>{day.getDate()}</span>
+                    <span className={styles.weekDayMonth}>{day.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</span>
                   </div>
-
-                  <div className={styles.events}>
-                    {projs.slice(0, 3).map(p => {
-                      const cfg = STATUS_CONFIG[p.status] || {};
+                  <div className={styles.weekEvents}>
+                    {projs.length === 0 && <span className={styles.weekEmpty}>Aucun projet</span>}
+                    {projs.map(p => {
+                      const cfg   = STATUS_CONFIG[p.status] || {};
+                      const color = p._color ?? cfg.dot;
                       return (
                         <div
                           key={p.id}
-                          className={`${styles.event} ${dragProject?.id === p.id ? styles.eventDragging : ''}`}
-
+                          className={`${styles.weekEvent} ${dragProject?.id === p.id ? styles.eventDragging : ''}`}
+                          style={{ '--ev-color': color }}
                           draggable
                           onDragStart={e => handleDragStart(e, p)}
                           onDragEnd={handleDragEnd}
-                          onClick={e => {
-                            e.stopPropagation();
-                            setTooltip({ project: p, x: e.clientX, y: e.clientY });
-                          }}
-                          title={p.name}
+                          onClick={e => { e.stopPropagation(); setTooltip({ project: p, x: e.clientX, y: e.clientY }); }}
                         >
-                          <span className={styles.eventName}>{p.name}</span>
-                          <div className={styles.eventBottom}>
-                            {p.type && (
-                              <span className={styles.eventType}>{p.type}</span>
+                          <div className={styles.weekEvLeft}>
+                            <span className={styles.weekEvName}>{p.name}</span>
+                            {fmtTimeRange(p.heure_debut, p.heure_fin) && (
+                              <span className={styles.weekEvTime}>{fmtTimeRange(p.heure_debut, p.heure_fin)}</span>
                             )}
+                          </div>
+                          <div className={styles.weekEvRight}>
+                            {p.type && <span className={styles.weekEvBadge}>{p.type}</span>}
                             {p.assigned_users?.length > 0 && (
                               <div className={styles.eventAvatars}>
                                 {p.assigned_users.slice(0, 3).map(u => (
-                                  <span
-                                    key={u.id}
-                                    className={styles.eventAvatar}
-                                    style={{ background: u.color || '#6366f1' }}
-                                    title={u.name}
-                                  >
-                                    {u.avatar}
-                                  </span>
+                                  <span key={u.id} className={styles.eventAvatar} style={{ background: u.color || '#6366f1' }} title={u.name}>{u.avatar}</span>
                                 ))}
-                                {p.assigned_users.length > 3 && (
-                                  <span className={styles.eventAvatarMore}>
-                                    +{p.assigned_users.length - 3}
-                                  </span>
-                                )}
+                                {p.assigned_users.length > 3 && <span className={styles.eventAvatarMore}>+{p.assigned_users.length - 3}</span>}
                               </div>
                             )}
                           </div>
                         </div>
                       );
                     })}
-                    {projs.length > 3 && (
-                      <div className={styles.more}>+{projs.length - 3} de plus</div>
-                    )}
                   </div>
                 </div>
               );
             })}
           </div>
+
+        ) : (
+
+          /* ════ VUE MOIS ════ */
+          <div className={styles.monthWrap}>
+
+            {/* Grille des cellules */}
+            <div
+              className={styles.grid}
+              style={{
+                '--total-weeks': totalWeeks,
+                '--cell-h':      `${densityCfg.cellH}px`,
+                '--bar-h':       `${densityCfg.barH}px`,
+                '--day-num-h':   `${densityCfg.dayNumH}px`,
+              }}
+            >
+              {/* En-têtes + indicateur de surbrillance semaine */}
+              {DAY_NAMES.map((d, i) => (
+                <div key={d} className={styles.dayHeader}>{d}</div>
+              ))}
+
+              {/* Padding */}
+              {Array.from({ length: paddingDays }).map((_, i) => (
+                <div
+                  key={`pad-${i}`}
+                  className={[
+                    styles.cellEmpty,
+                    hoveredWeek === Math.floor(i / 7) ? styles.cellWeekHover : '',
+                  ].join(' ')}
+                />
+              ))}
+
+              {/* Cellules des jours */}
+              {Array.from({ length: totalDays }, (_, i) => i + 1).map(day => {
+                const wr         = cellWeekRow(day);
+                const isToday    = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+                const isDragOver = dragOverDay === day;
+                const col        = (day - 1 + paddingDays) % 7;
+                const hiddenProjs = hiddenCountForDay(wr, col);
+
+                return (
+                  <div
+                    key={day}
+                    className={[
+                      styles.cell,
+                      isToday    ? styles.cellToday    : '',
+                      isDragOver ? styles.cellDragOver : '',
+                      hoveredWeek === wr ? styles.cellWeekHover : '',
+                    ].join(' ')}
+                    onDragOver={e => handleDragOver(e, day)}
+                    onDrop={e => handleDrop(e, day)}
+                  >
+                    <div className={`${styles.dayNum} ${isToday ? styles.dayNumToday : ''}`}>{day}</div>
+
+                    {/* Compteur +N cliquable */}
+                    {hiddenProjs.length > 0 && (
+                      <button
+                        className={styles.moreBtn}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setPopover({ projects: hiddenProjs, x: e.clientX, y: e.clientY });
+                        }}
+                      >
+                        +{hiddenProjs.length} de plus
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Overlay barres ── */}
+            <div
+              className={styles.barsOverlay}
+              style={{
+                '--padding-days': paddingDays,
+                '--total-weeks':  totalWeeks,
+                '--cell-h':       `${densityCfg.cellH}px`,
+                '--bar-h':        `${densityCfg.barH}px`,
+                '--day-num-h':    `${densityCfg.dayNumH}px`,
+              }}
+            >
+              {visibleSegs.map((seg, idx) => {
+                const { project: p, weekRow, colStart, colSpan, isStart, isEnd, lane } = seg;
+                const color = p._color ?? '#6366f1';
+                return (
+                  <div
+                    key={`${p.id}-${idx}`}
+                    className={`${styles.bar} ${dragProject?.id === p.id ? styles.eventDragging : ''}`}
+                    style={{
+                      '--bar-color': color,
+                      '--col-start': colStart,
+                      '--col-span':  colSpan,
+                      '--week-row':  weekRow,
+                      '--lane':      lane,
+                      borderRadius:  isStart && isEnd ? '5px' : isStart ? '5px 0 0 5px' : isEnd ? '0 5px 5px 0' : '0',
+                    }}
+                    draggable
+                    onDragStart={e => handleDragStart(e, p)}
+                    onDragEnd={handleDragEnd}
+                    onMouseEnter={() => setHoveredWeek(weekRow)}
+                    onMouseLeave={() => setHoveredWeek(null)}
+                    onClick={e => { e.stopPropagation(); setTooltip({ project: p, x: e.clientX, y: e.clientY }); }}
+                    title={p.name}
+                  >
+                    <span className={styles.barName}>{p.name}</span>
+                    {p.assigned_users?.length > 0 && (
+                      <div className={styles.barAvatars}>
+                        {p.assigned_users.slice(0, 2).map(u => (
+                          <span key={u.id} className={styles.eventAvatar} style={{ background: u.color || '#6366f1' }} title={u.name}>{u.avatar}</span>
+                        ))}
+                        {p.assigned_users.length > 2 && <span className={styles.eventAvatarMore}>+{p.assigned_users.length - 2}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
         )}
       </div>
 
-      {/* ── Tooltip ── */}
+      {/* ── Popover +N ── */}
+      {popover && (
+        <div
+          ref={popoverRef}
+          className={styles.popover}
+          style={{
+            top:  Math.min(popover.y + 10, window.innerHeight - 300),
+            left: Math.min(popover.x + 10, window.innerWidth  - 260),
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className={styles.popoverHeader}>
+            <span className={styles.popoverTitle}>Projets supplémentaires</span>
+            <button className={styles.tooltipClose} onClick={() => setPopover(null)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+          <div className={styles.popoverList}>
+            {popover.projects.map(p => (
+              <div
+                key={p.id}
+                className={styles.popoverItem}
+                style={{ '--item-color': p._color ?? '#6366f1' }}
+                onClick={() => { setTooltip({ project: p, x: popover.x + 270, y: popover.y }); setPopover(null); }}
+              >
+                <span className={styles.popoverDot} />
+                <span className={styles.popoverItemName}>{p.name}</span>
+                <span className={styles.popoverItemDates}>
+                  {fmtDate(p.start_date)} → {fmtDate(p.end_date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tooltip détail ── */}
       {tooltip && (
         <div
           ref={tooltipRef}
@@ -316,51 +647,32 @@ export default function CalendarPage() {
           onClick={e => e.stopPropagation()}
         >
           <button className={styles.tooltipClose} onClick={() => setTooltip(null)}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/>
-            </svg>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/></svg>
           </button>
-
           <div className={styles.tooltipTop}>
             <div className={styles.tooltipName}>{tooltip.project.name}</div>
             <div className={styles.tooltipRef}>{tooltip.project.reference}</div>
           </div>
-
           <div className={styles.tooltipBody}>
-            <div className={styles.tooltipRow}>
-              <StatusBadge status={tooltip.project.status} />
-            </div>
-
+            <div className={styles.tooltipRow}><StatusBadge status={tooltip.project.status} /></div>
             <div className={styles.tooltipMeta}>
               <div className={styles.tooltipMetaItem}>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <rect x="1" y="2" width="11" height="10" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M1 5h11M4 1v2M9 1v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                </svg>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="10" rx="2" stroke="currentColor" strokeWidth="1.3"/><path d="M1 5h11M4 1v2M9 1v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
                 {fmtDate(tooltip.project.start_date)} → {fmtDate(tooltip.project.end_date)}
               </div>
-
               {fmtTimeRange(tooltip.project.heure_debut, tooltip.project.heure_fin) && (
                 <div className={styles.tooltipMetaItem}>
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
-                    <path d="M6.5 3.5v3l2 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                  </svg>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/><path d="M6.5 3.5v3l2 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
                   {fmtTimeRange(tooltip.project.heure_debut, tooltip.project.heure_fin)}
                 </div>
               )}
-
               {tooltip.project.ville && (
                 <div className={styles.tooltipMetaItem}>
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <path d="M6.5 1C4.57 1 3 2.57 3 4.5c0 2.63 3.5 7.5 3.5 7.5S10 7.13 10 4.5C10 2.57 8.43 1 6.5 1z" stroke="currentColor" strokeWidth="1.3"/>
-                    <circle cx="6.5" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
-                  </svg>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1C4.57 1 3 2.57 3 4.5c0 2.63 3.5 7.5 3.5 7.5S10 7.13 10 4.5C10 2.57 8.43 1 6.5 1z" stroke="currentColor" strokeWidth="1.3"/><circle cx="6.5" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/></svg>
                   {tooltip.project.ville}
                 </div>
               )}
             </div>
-
             {tooltip.project.description && (
               <p className={styles.tooltipDesc}>{tooltip.project.description}</p>
             )}
