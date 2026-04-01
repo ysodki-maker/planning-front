@@ -1,16 +1,15 @@
 import { StatusBadge, TypeBadge } from '../common/Badge';
 import { AvatarGroup } from '../common/Avatar';
 import Icon from '../common/Icon';
-import { fmtDate, fmtTimeRange, daysLeft } from '../../utils/helpers';
+import { fmtDate, fmtTimeRange, daysLeft, truncate } from '../../utils/helpers';
 import styles from './ProjectsTable.module.css';
-import { useEffect } from 'react';
 
 const COLS = [
-  { key: 'name',    label: 'Projet',   width: '22%' },
+  { key: 'name',    label: 'Projet',   width: '20%' },
   { key: 'ville',   label: 'Ville',    width: '10%' },
   { key: 'type',    label: 'Type',     width: '10%' },
   { key: 'status',  label: 'Statut',   width: '14%' },
-  { key: 'period',  label: 'Période',  width: '18%' },
+  { key: 'period',  label: 'Période',  width: '14%' },
   { key: 'hours',   label: 'Horaires', width: '10%' },
   { key: 'team',    label: 'Équipe',   width: '8%'  },
   { key: 'actions', label: '',         width: '8%'  },
@@ -25,8 +24,6 @@ function DaysChip({ endDate, status }) {
 }
 
 export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loading }) {
-  useEffect(()=>{
-  },[projects]);
   if (loading) return (
     <div className={styles.empty}>
       <div className={styles.spinner} />
@@ -90,6 +87,17 @@ export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loa
                 <td>
                   {timeRange ? (
                     <span className={styles.timeRange}>{timeRange}</span>
+                  ) : (
+                    <span className={styles.timeMuted}>—</span>
+                  )}
+                </td>
+
+                {/* Localisation */}
+                <td>
+                  {p.localisation ? (
+                    <span className={styles.locText} title={p.localisation}>
+                      {truncate(p.localisation, 32)}
+                    </span>
                   ) : (
                     <span className={styles.timeMuted}>—</span>
                   )}
