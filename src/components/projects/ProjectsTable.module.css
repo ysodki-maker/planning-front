@@ -142,6 +142,9 @@
   border-radius: 50%;
   animation: spin .6s linear infinite;
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Ville */
 .ville {
   display: flex;
@@ -168,4 +171,12 @@
   color: var(--ink-ghost);
   font-size: var(--text-xs);
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Localisation */
+.locText {
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+  line-height: 1.4;
+  display: block;
+  cursor: default;
+}
