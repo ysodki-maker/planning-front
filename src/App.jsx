@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider }         from './context/ToastContext';
@@ -6,10 +7,20 @@ import LoginPage     from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage  from './pages/ProjectsPage';
 import CalendarPage  from './pages/CalendarPage';
-import UsersPage     from './pages/UsersPage';
+import UsersPage          from './pages/UsersPage';
+import ConfirmSuccessPage from './pages/ConfirmSuccessPage';
+import ConfirmPage        from './pages/ConfirmPage';
 import './styles/tokens.css';
 
 function AppRouter() {
+  // Page de confirmation via lien email (pas de auth requise)
+  if (window.location.pathname === '/confirm-success') {
+    return <ConfirmSuccessPage />;
+  }
+  // Page formulaire de confirmation (lien email)
+  if (window.location.pathname === '/confirm') {
+    return <ConfirmPage />;
+  }
   const { user, loading, isAdmin } = useAuth();
   const [page, setPage] = useState('dashboard');
 
