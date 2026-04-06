@@ -5,25 +5,26 @@ import { fmtDate, fmtTimeRange, daysLeft, truncate } from '../../utils/helpers';
 import styles from './ProjectsTable.module.css';
 
 const COLS = [
-  { key: 'name',    label: 'Projet',   width: '20%' },
-  { key: 'ville',   label: 'Ville',    width: '10%' },
-  { key: 'type',    label: 'Type',     width: '10%' },
-  { key: 'status',  label: 'Statut',   width: '14%' },
-  { key: 'period',  label: 'Période',  width: '14%' },
-  { key: 'hours',   label: 'Horaires', width: '10%' },
-  { key: 'team',    label: 'Équipe',   width: '8%'  },
-  { key: 'actions', label: '',         width: '8%'  },
+  { key: 'name',    label: 'Projet',       width: '20%' },
+  { key: 'ville',   label: 'Ville',        width: '9%'  },
+  { key: 'type',    label: 'Type',         width: '9%'  },
+  { key: 'status',  label: 'Statut',       width: '14%' },
+  { key: 'period',  label: 'Période',      width: '13%' },
+  { key: 'hours',   label: 'Horaires',     width: '9%'  },
+  { key: 'loc',     label: 'Localisation', width: '10%' },
+  { key: 'team',    label: 'Équipe',       width: '7%'  },
+  { key: 'actions', label: '',             width: '9%'  },
 ];
 
 function DaysChip({ endDate, status }) {
   if (status === 'Terminé') return null;
   const d = daysLeft(endDate);
-  if (d < 0) return <span className={`${styles.chip} ${styles.chipRed}`}>En retard</span>;
+  if (d < 0)  return <span className={`${styles.chip} ${styles.chipRed}`}>En retard</span>;
   if (d <= 7) return <span className={`${styles.chip} ${styles.chipOrange}`}>{d}j</span>;
   return null;
 }
 
-export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loading }) {
+export default function ProjectsTable({ projects, onEdit, onDelete, onConfirm, isAdmin, loading }) {
   if (loading) return (
     <div className={styles.empty}>
       <div className={styles.spinner} />
@@ -43,16 +44,16 @@ export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loa
       <table className={styles.table}>
         <thead>
           <tr>
-            {COLS.map((c) => (
-              <th key={c.key} style={{ width: c.width }}>{c.label}</th>
-            ))}
+            {COLS.map(c => <th key={c.key} style={{ width: c.width }}>{c.label}</th>)}
           </tr>
         </thead>
         <tbody>
-          {projects.map((p) => {
+          {projects.map(p => {
             const timeRange = fmtTimeRange(p.heure_debut, p.heure_fin);
+            const isDemande = p.status === "Demande d'affectation";
             return (
               <tr key={p.id} className={styles.row}>
+
                 {/* Projet */}
                 <td>
                   <div className={styles.projectName}>{p.name}</div>
@@ -85,22 +86,16 @@ export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loa
 
                 {/* Horaires */}
                 <td>
-                  {timeRange ? (
-                    <span className={styles.timeRange}>{timeRange}</span>
-                  ) : (
-                    <span className={styles.timeMuted}>—</span>
-                  )}
+                  {timeRange
+                    ? <span className={styles.timeRange}>{timeRange}</span>
+                    : <span className={styles.timeMuted}>—</span>}
                 </td>
 
                 {/* Localisation */}
                 <td>
-                  {p.localisation ? (
-                    <span className={styles.locText} title={p.localisation}>
-                      {truncate(p.localisation, 32)}
-                    </span>
-                  ) : (
-                    <span className={styles.timeMuted}>—</span>
-                  )}
+                  {p.localisation
+                    ? <span className={styles.locText} title={p.localisation}>{truncate(p.localisation, 30)}</span>
+                    : <span className={styles.timeMuted}>—</span>}
                 </td>
 
                 {/* Équipe */}
@@ -109,13 +104,33 @@ export default function ProjectsTable({ projects, onEdit, onDelete, isAdmin, loa
                 {/* Actions */}
                 <td>
                   <div className={styles.actions}>
-                    <button className={styles.actionBtn} onClick={() => onEdit(p)} title="Modifier">
+
+                    {/* Bouton Confirmer — uniquement sur "Demande d'affectation" */}
+                    {isAdmin && isDemande && onConfirm && (
+                      <button
+                        className={`${styles.actionBtn} ${styles.actionBtnConfirm}`}
+                        onClick={() => onConfirm(p)}
+                        title="Confirmer — passer En cours"
+                      >
+                        <Icon name="check" size={14} />
+                      </button>
+                    )}
+
+                    {/* Modifier */}
+                    <button
+                      className={styles.actionBtn}
+                      onClick={() => onEdit(p)}
+                      title="Modifier"
+                    >
                       <Icon name="edit" size={14} />
                     </button>
+
+                    {/* Supprimer */}
                     {isAdmin && (
                       <button
                         className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                        onClick={() => onDelete(p)} title="Supprimer"
+                        onClick={() => onDelete(p)}
+                        title="Supprimer"
                       >
                         <Icon name="trash" size={14} />
                       </button>
