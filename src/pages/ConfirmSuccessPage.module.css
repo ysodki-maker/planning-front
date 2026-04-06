@@ -1,0 +1,65 @@
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  padding: var(--s6);
+}
+
+.card {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--s12) var(--s10);
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow);
+}
+
+.icon {
+  width: 56px;
+  height: 56px;
+  background: var(--green-light);
+  color: var(--green);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 auto var(--s6);
+}
+
+.title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 var(--s4);
+  letter-spacing: -0.4px;
+}
+
+.message {
+  font-size: var(--text-base);
+  color: var(--ink-soft);
+  margin: 0 0 var(--s3);
+  line-height: 1.6;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--blue-light);
+  color: var(--blue);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.sub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: 0;
+}
