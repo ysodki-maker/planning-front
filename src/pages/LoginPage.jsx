@@ -35,13 +35,13 @@ export default function LoginPage() {
       {/* Left panel */}
       <div className={styles.left}>
         <div className={styles.brand}>
-          <div className={styles.brandMark}>PN</div>
-          <span className={styles.brandName}>Planning</span>
+          <div className={styles.brandMark}>PF</div>
+          <span className={styles.brandName}>PlanFlow</span>
         </div>
         <div className={styles.leftContent}>
           <h2 className={styles.tagline}>Gérez vos projets avec clarté.</h2>
           <p className={styles.taglineSub}>
-            Planification, affectation et suivi de vos projets en un seul endroit.
+            Planification, planification et suivi de vos projets en un seul endroit.
           </p>
           <div className={styles.stats}>
             {[
@@ -108,7 +108,7 @@ export default function LoginPage() {
             {loading ? 'Connexion…' : 'Se connecter'}
           </Button>
 
-          <p className={styles.hint} hidden>
+          <p className={styles.hint}>
             Compte de démo :{' '}
             <button type="button" className={styles.hintBtn}
               onClick={() => setForm({ email: 'karim@planflow.com', password: 'Admin@1234' })}>
