@@ -7,7 +7,7 @@ import { isoDate, fmtTime } from '../../utils/helpers';
 import styles from './ProjectForm.module.css';
 
 const EMPTY = {
-  name: '', ville: '', status: "Demande d'affectation",
+  name: '', ville: '', status: "Demande de planification",
   type: 'Relevé', start_date: '', end_date: '',
   heure_debut: '', heure_fin: '',
   localisation: '', description: '', user_ids: [],
