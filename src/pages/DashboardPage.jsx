@@ -42,7 +42,7 @@ export default function DashboardPage() {
   const byStatus = stats?.by_status || {};
 
   const statusRows = [
-    { key: "Demande d'affectation", cfg: STATUS_CONFIG["Demande d'affectation"] },
+    { key: "Demande de planification", cfg: STATUS_CONFIG["Demande de planification"] },
     { key: 'En cours',              cfg: STATUS_CONFIG['En cours'] },
     { key: 'Terminé',               cfg: STATUS_CONFIG['Terminé'] },
   ];
