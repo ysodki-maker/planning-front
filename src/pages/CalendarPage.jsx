@@ -64,11 +64,8 @@ function norm(p) {
 }
 
 // ── Vue mois : segments avec lanes ───────────────────────────────────────────
-const MAX_VIS = 3; // barres visibles max par cellule
+const MAX_VIS = 2; // barres visibles max (garantit toujours 2 minimum + bouton)
 
-// Retourne { segsByCell, hiddenByCell }
-// segsByCell[`${wr}-${col}`] = [{ p, col, span, lane, isS, isE }, ...]
-// hiddenByCell[`${wr}-${col}`] = [project, ...]  (ceux au-delà de MAX_VIS)
 function buildMonthLayout(projects, year, month) {
   const first = new Date(year, month, 1);
   const last  = new Date(year, month + 1, 0);
@@ -87,22 +84,20 @@ function buildMonthLayout(projects, year, month) {
 
     let cur = new Date(vs);
     while (cur <= ve) {
-      const ci  = (cur.getDate() - 1 + pad);
-      const wr  = Math.floor(ci / 7);
-      const col = ci % 7;
-      const eow = new Date(cur); eow.setDate(cur.getDate() + (6 - col));
-      const se  = ve < eow ? ve : eow;
+      const ci   = (cur.getDate() - 1 + pad);
+      const wr   = Math.floor(ci / 7);
+      const col  = ci % 7;
+      const eow  = new Date(cur); eow.setDate(cur.getDate() + (6 - col));
+      const se   = ve < eow ? ve : eow;
       const span = Math.round((se - cur) / 86400000) + 1;
       segs.push({ p, wr, col, span, isS: iso(cur) === iso(vs), isE: iso(se) === iso(ve), lane: -1 });
       cur = new Date(se); cur.setDate(cur.getDate() + 1);
     }
   }
 
-  // 2. Assigner les lanes par semaine (même algo que Google Cal)
-  // On trie par début de segment puis par durée décroissante pour stabilité
+  // 2. Assigner les lanes — tri par colonne puis durée décroissante pour stabilité
   segs.sort((a, b) => a.wr !== b.wr ? a.wr - b.wr : a.col !== b.col ? a.col - b.col : b.span - a.span);
-
-  const weekOcc = {}; // wr -> [{cs, ce, lane}]
+  const weekOcc = {};
   for (const s of segs) {
     if (!weekOcc[s.wr]) weekOcc[s.wr] = [];
     const occ = weekOcc[s.wr];
@@ -113,29 +108,19 @@ function buildMonthLayout(projects, year, month) {
     s.lane = lane;
   }
 
-  // 3. Indexer par cellule
-  const segsByCell  = {};
-  const hiddenByCell = {};
+  // 3. Indexer chaque cellule couverte par le segment
+  //    segsByCell[key][lane] = segment (ou undefined)
+  const segsByCell   = {};  // key -> { [lane]: seg }
+  const hiddenByCell = {};  // key -> [project]
 
   for (const s of segs) {
     for (let c = s.col; c < s.col + s.span; c++) {
       const k = `${s.wr}-${c}`;
-      if (!segsByCell[k]) segsByCell[k] = [];
-      // On ne stocke le segment que pour la cellule de départ (col)
-      // mais on track les projets visibles pour hidden
-    }
-    // Stocker le segment complet (référencé depuis col de départ)
-    const startKey = `${s.wr}-${s.col}`;
-    if (!segsByCell[startKey]) segsByCell[startKey] = [];
-    segsByCell[startKey].push(s);
-  }
-
-  // 4. Calculer les projets cachés par cellule (lane >= MAX_VIS)
-  // Pour chaque cellule, lister les projets qui la couvrent avec lane >= MAX_VIS
-  for (const s of segs) {
-    if (s.lane >= MAX_VIS) {
-      for (let c = s.col; c < s.col + s.span; c++) {
-        const k = `${s.wr}-${c}`;
+      if (s.lane < MAX_VIS) {
+        if (!segsByCell[k]) segsByCell[k] = {};
+        // Ne stocker que si ce n'est pas déjà occupé (ne devrait pas arriver)
+        segsByCell[k][s.lane] = s;
+      } else {
         if (!hiddenByCell[k]) hiddenByCell[k] = [];
         if (!hiddenByCell[k].find(x => x.id === s.p.id)) hiddenByCell[k].push(s.p);
       }
@@ -454,15 +439,9 @@ export default function CalendarPage() {
                   const day = ci - padDays + 1;
                   const isCurrentMonth = day >= 1 && day <= totalDays;
                   const isT = isCurrentMonth && day===today.getDate()&&MM===today.getMonth()&&MY===today.getFullYear();
-                  const hidden = hiddenByCell[`${wr}-${col}`]||[];
-
-                  // Barres qui DÉMARRENT dans cette cellule
-                  const startingSegs = (segsByCell[`${wr}-${col}`]||[]).filter(s=>s.lane<MAX_VIS);
-
-                  // Construire tableau de slots lanes 0..MAX_VIS-1
-                  // Pour savoir si une lane est occupée (par un seg qui démarre avant)
-                  // on cherche aussi les segs venant de la gauche (col > s.col)
-                  const occupiedLanes = new Set(startingSegs.map(s=>s.lane));
+                  const cellKey = `${wr}-${col}`;
+                  const hidden  = hiddenByCell[cellKey] || [];
+                  const laneMap = segsByCell[cellKey]   || {};
 
                   return (
                     <div key={col} className={`${styles.mCell} ${!isCurrentMonth?styles.mCellOtherMonth:''}`}>
@@ -476,42 +455,38 @@ export default function CalendarPage() {
                       {/* Zone barres : MAX_VIS slots */}
                       <div className={styles.mBarsArea}>
                         {Array.from({length:MAX_VIS}).map((_,lane)=>{
-                          // Chercher si un seg de cette lane démarre dans cette col ou vient de la gauche
-                          const seg = startingSegs.find(s=>s.lane===lane);
-                          if (seg) {
-                            // Calculer la largeur : combien de colonnes restantes dans la semaine
-                            const spanInRow = Math.min(seg.span, 7-col);
-                            const c = seg.p._color;
-                            const isStart = seg.isS;
-                            const isEnd   = seg.col + seg.span - 1 === col + spanInRow - 1 ? seg.isE : false;
-                            return (
-                              <div key={lane} className={styles.mBarSlot}>
-                                <div
-                                  className={styles.mBar}
-                                  style={{
-                                    width: `calc(${spanInRow * 100}% + ${spanInRow-1}px)`,
-                                    background: hexAlpha(c, .15),
-                                    borderLeft: isStart ? `3px solid ${c}` : 'none',
-                                    borderRight: isEnd ? 'none' : 'none',
-                                    color: c,
-                                    borderRadius: isStart && isEnd ? 4 : isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : 0,
-                                    paddingLeft: isStart ? 4 : 6,
-                                    marginLeft: isStart ? 0 : -1,
-                                    marginRight: isEnd || col+spanInRow-1===6 ? 0 : -1,
-                                  }}
-                                  onClick={e=>openTT(e,seg.p)}
-                                >
-                                  {isStart && <span className={styles.mBarTxt}>{seg.p.name}</span>}
-                                </div>
+                          const seg = laneMap[lane];
+                          if (!seg) return <div key={lane} className={styles.mBarSlot}/>;
+
+                          const isStart   = seg.isS && seg.col === col;
+                          const spanInRow = Math.min(seg.col + seg.span - col, 7 - col);
+                          const isEnd     = seg.isE && (seg.col + seg.span - 1) === col + spanInRow - 1;
+                          const c         = seg.p._color;
+
+                          return (
+                            <div key={lane} className={styles.mBarSlot}>
+                              <div
+                                className={styles.mBar}
+                                style={{
+                                  width: `calc(${spanInRow * 100}% + ${(spanInRow - 1) * 1}px)`,
+                                  background: hexAlpha(c, .15),
+                                  borderLeft:   isStart ? `3px solid ${c}` : 'none',
+                                  color: c,
+                                  borderRadius: isStart && isEnd ? 4 : isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : 0,
+                                  paddingLeft:  isStart ? 5 : 4,
+                                  marginLeft:   isStart ? 2 : 0,
+                                  marginRight:  isEnd   ? 2 : 0,
+                                }}
+                                onClick={e => openTT(e, seg.p)}
+                              >
+                                {isStart && <span className={styles.mBarTxt}>{seg.p.name}</span>}
                               </div>
-                            );
-                          }
-                          // Lane vide — placeholder pour maintenir la hauteur
-                          return <div key={lane} className={styles.mBarSlot}/>;
+                            </div>
+                          );
                         })}
 
                         {/* "+N autres" */}
-                        {hidden.length>0&&(
+                        {hidden.length > 0 && (
                           <button className={styles.mMore}
                             onClick={e=>{e.stopPropagation();setPopover({projects:hidden,x:e.clientX,y:e.clientY});}}>
                             +{hidden.length} autre{hidden.length>1?'s':''}
