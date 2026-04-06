@@ -50,7 +50,7 @@ export default function ProjectsTable({ projects, onEdit, onDelete, onConfirm, i
         <tbody>
           {projects.map(p => {
             const timeRange = fmtTimeRange(p.heure_debut, p.heure_fin);
-            const isDemande = p.status === "Demande d'affectation";
+            const isDemande = p.status === "Demande de planification";
             return (
               <tr key={p.id} className={styles.row}>
 
@@ -105,7 +105,7 @@ export default function ProjectsTable({ projects, onEdit, onDelete, onConfirm, i
                 <td>
                   <div className={styles.actions}>
 
-                    {/* Bouton Confirmer — uniquement sur "Demande d'affectation" */}
+                    {/* Bouton Confirmer — uniquement sur "Demande de planification" */}
                     {isAdmin && isDemande && onConfirm && (
                       <button
                         className={`${styles.actionBtn} ${styles.actionBtnConfirm}`}
