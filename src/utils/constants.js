@@ -1,7 +1,7 @@
 // ── Statuts ──────────────────────────────────────────────────────────────────
 export const STATUS_CONFIG = {
-  "Demande d'affectation": {
-    label:  "Demande d'affectation",
+  "Demande de planification": {
+    label:  "Demande de planification",
     color:  'var(--orange)',
     bg:     'var(--orange-light)',
     dot:    '#D4680A',
