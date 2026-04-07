@@ -15,7 +15,7 @@ import Button               from '../components/common/Button';
 import Icon                 from '../components/common/Icon';
 import { Select }           from '../components/common/Field';
 
-import { STATUS_LIST, TYPE_LIST, PAGE_SIZE } from '../utils/constants';
+import { STATUS_LIST, TYPE_LIST, PAGE_SIZE, STATUS_CONFIG } from '../utils/constants';
 import styles from './ProjectsPage.module.css';
 
 export default function ProjectsPage() {
@@ -29,11 +29,12 @@ export default function ProjectsPage() {
   const [status, setStatus] = useState('');
   const [type,   setType]   = useState('');
   const [page,   setPage]   = useState(1);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
 
   const [showForm,      setShowForm]      = useState(false);
   const [editProject,   setEditProject]   = useState(null);
   const [deleteTarget,  setDeleteTarget]  = useState(null);
-  const [confirmTarget, setConfirmTarget] = useState(null); // projet à confirmer
+  const [confirmTarget, setConfirmTarget] = useState(null);
   const [saving,     setSaving]     = useState(false);
   const [deleting,   setDeleting]   = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -85,12 +86,11 @@ export default function ProjectsPage() {
     } finally { setDeleting(false); }
   };
 
-  // ── Confirmation avec dates/heures ────────────────────────────────────────
   const handleConfirm = async (dateForm) => {
     setConfirming(true);
     try {
       await projectsApi.confirm(confirmTarget.id, dateForm);
-      toast.success(`"${confirmTarget.name}" confirmé — passé En cours. L'équipe a été notifiée.`);
+      toast.success(`"${confirmTarget.name}" confirmé — passé En cours.`);
       setConfirmTarget(null);
       applyFilters({});
     } catch (err) {
@@ -100,11 +100,17 @@ export default function ProjectsPage() {
 
   const totalPages = pagination?.totalPages || 1;
 
+  // Stats rapides
+  const stats = Object.entries(STATUS_CONFIG).map(([key, cfg]) => ({
+    key, cfg,
+    count: projects.filter(p => p.status === key).length,
+  }));
+
   return (
     <div className={styles.page}>
       <PageHeader
         title="Projets"
-        subtitle={pagination ? `${pagination.total} projet(s) au total` : ''}
+        subtitle={pagination ? `${pagination.total} projet(s)` : ''}
         actions={isAdmin && (
           <Button variant="primary" icon={<Icon name="plus" size={14} />} onClick={() => setShowForm(true)}>
             Nouveau projet
@@ -112,7 +118,27 @@ export default function ProjectsPage() {
         )}
       />
 
-      {/* Filters */}
+      {/* ── Stats rapides ── */}
+      <div className={styles.statsBar}>
+        {stats.map(({ key, cfg, count }) => (
+          <button
+            key={key}
+            className={`${styles.statChip} ${status === key ? styles.statChipActive : ''}`}
+            style={{ '--sc': cfg.dot }}
+            onClick={() => {
+              const next = status === key ? '' : key;
+              setStatus(next);
+              applyFilters({ status: next, page: 1 });
+            }}
+          >
+            <span className={styles.statDot} style={{ background: cfg.dot }} />
+            <span className={styles.statLabel}>{key}</span>
+            <span className={styles.statCount}>{count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Barre de filtres ── */}
       <div className={styles.filters}>
         <div className={styles.searchWrap}>
           <Icon name="search" size={14} color="var(--ink-muted)" />
@@ -121,36 +147,73 @@ export default function ProjectsPage() {
             placeholder="Rechercher un projet, une ville…"
             value={search} onChange={handleSearch}
           />
+          {search && (
+            <button className={styles.searchClear} onClick={() => { setSearch(''); applyFilters({ search: '', page: 1 }); }}>
+              ×
+            </button>
+          )}
         </div>
-        <Select value={status} onChange={handleStatus} style={{ width: 200 }}>
-          <option value="">Tous les statuts</option>
-          {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-        </Select>
-        <Select value={type} onChange={handleType} style={{ width: 160 }}>
+
+        <Select value={type} onChange={handleType} style={{ width: 150, height: 36 }}>
           <option value="">Tous les types</option>
           {TYPE_LIST.map(t => <option key={t} value={t}>{t}</option>)}
         </Select>
+
         {(search || status || type) && (
           <Button variant="ghost" size="sm" onClick={() => {
             setSearch(''); setStatus(''); setType('');
             fetch({ page: 1, limit: PAGE_SIZE });
-          }}>
-            Réinitialiser
-          </Button>
+          }}>Réinitialiser</Button>
         )}
+
+        {/* Toggle vue grille / liste */}
+        <div className={styles.viewToggle}>
+          <button
+            className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewBtnActive : ''}`}
+            onClick={() => setViewMode('grid')}
+            title="Vue grille"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="0" y="0" width="6" height="6" rx="1"/>
+              <rect x="8" y="0" width="6" height="6" rx="1"/>
+              <rect x="0" y="8" width="6" height="6" rx="1"/>
+              <rect x="8" y="8" width="6" height="6" rx="1"/>
+            </svg>
+          </button>
+          <button
+            className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewBtnActive : ''}`}
+            onClick={() => setViewMode('list')}
+            title="Vue liste"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <line x1="2" y1="3" x2="12" y2="3"/>
+              <line x1="2" y1="7" x2="12" y2="7"/>
+              <line x1="2" y1="11" x2="12" y2="11"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className={styles.tableWrap}>
+      {/* ── Contenu ── */}
+      {viewMode === 'list' ? (
+        <div className={styles.tableWrap}>
+          <ProjectsTable
+            projects={projects} loading={loading} isAdmin={isAdmin} viewMode="list"
+            onEdit={p => setEditProject(p)}
+            onDelete={p => setDeleteTarget(p)}
+            onConfirm={p => setConfirmTarget(p)}
+          />
+        </div>
+      ) : (
         <ProjectsTable
-          projects={projects} loading={loading} isAdmin={isAdmin}
-          onEdit={(p) => setEditProject(p)}
-          onDelete={(p) => setDeleteTarget(p)}
-          onConfirm={(p) => setConfirmTarget(p)}
+          projects={projects} loading={loading} isAdmin={isAdmin} viewMode="grid"
+          onEdit={p => setEditProject(p)}
+          onDelete={p => setDeleteTarget(p)}
+          onConfirm={p => setConfirmTarget(p)}
         />
-      </div>
+      )}
 
-      {/* Pagination */}
+      {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div className={styles.pagination}>
           <Button variant="secondary" size="sm" icon={<Icon name="chevronLeft" size={13} />}
@@ -166,35 +229,18 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Modal création */}
+      {/* ── Modals ── */}
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Nouveau projet" width={620}>
         <ProjectForm users={users} onSave={handleCreate} onCancel={() => setShowForm(false)} loading={saving} />
       </Modal>
-
-      {/* Modal édition */}
       <Modal isOpen={!!editProject} onClose={() => setEditProject(null)} title="Modifier le projet" width={620}>
-        {editProject && (
-          <ProjectForm initial={editProject} users={users}
-            onSave={handleEdit} onCancel={() => setEditProject(null)} loading={saving} />
-        )}
+        {editProject && <ProjectForm initial={editProject} users={users} onSave={handleEdit} onCancel={() => setEditProject(null)} loading={saving} />}
       </Modal>
-
-      {/* Confirm suppression */}
-      <Confirm
-        isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete} loading={deleting}
-        title="Supprimer le projet"
-        message={`Supprimer "${deleteTarget?.name}" ? Cette action est irréversible.`}
-      />
-
-      {/* Modale confirmation projet avec dates/heures */}
-      <ConfirmProjectModal
-        isOpen={!!confirmTarget}
-        project={confirmTarget}
-        onClose={() => setConfirmTarget(null)}
-        onConfirm={handleConfirm}
-        loading={confirming}
-      />
+      <Confirm isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete}
+        loading={deleting} title="Supprimer le projet"
+        message={`Supprimer "${deleteTarget?.name}" ? Cette action est irréversible.`} />
+      <ConfirmProjectModal isOpen={!!confirmTarget} project={confirmTarget}
+        onClose={() => setConfirmTarget(null)} onConfirm={handleConfirm} loading={confirming} />
     </div>
   );
 }
