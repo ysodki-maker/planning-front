@@ -65,6 +65,33 @@
   margin: 0;
 }
 
+/* ── Toggle Mes projets (admin) ── */
+.myOnlyBtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 100px;
+  border: 1px solid #dadce0; background: #fff;
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  color: #5f6368; cursor: pointer; transition: all .12s;
+  white-space: nowrap;
+}
+.myOnlyBtn:hover { border-color: #6366f1; color: #3c4043; }
+.myOnlyActive {
+  background: rgba(99,102,241,.10);
+  border-color: #6366f1;
+  color: #4338ca;
+  font-weight: 600;
+}
+
+/* Label fixe non-admin */
+.myOnlyLabel {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 100px;
+  border: 1px solid rgba(99,102,241,.3);
+  background: rgba(99,102,241,.07);
+  font-size: 12px; font-weight: 600; color: #4338ca;
+  white-space: nowrap; user-select: none;
+}
+
 /* Filtres */
 .filterRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fChip {
@@ -118,373 +145,106 @@
    VUE SEMAINE
    ══════════════════════════════════════════ */
 
-.weekWrap {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-}
+.weekWrap { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
 
-/* Header jours */
 .wkHeader {
   display: grid;
   grid-template-columns: 52px repeat(7, 1fr);
   border-bottom: 1px solid #e0e0e0;
-  flex-shrink: 0;
-  background: #fff;
-  z-index: 5;
+  flex-shrink: 0; background: #fff; z-index: 5;
 }
-.gutterTop {
-  border-right: 1px solid #e0e0e0;
-}
-.wkDayHead {
-  border-right: 1px solid #e0e0e0;
-  min-width: 0;
-}
+.gutterTop { border-right: 1px solid #e0e0e0; }
+.wkDayHead { border-right: 1px solid #e0e0e0; min-width: 0; }
 .wkDayHead:last-child { border-right: none; }
 
-.dayHeadLabel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 0 6px;
-  gap: 3px;
-}
-.dayAbbr {
-  font-size: 11px;
-  font-weight: 500;
-  color: #70757a;
-  text-transform: uppercase;
-  letter-spacing: .5px;
-}
-.dayCircle {
-  width: 34px; height: 34px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px;
-  font-weight: 400;
-  color: #3c4043;
-  cursor: default;
-}
-.dayCircleToday {
-  background: #1a73e8;
-  color: #fff;
-  font-weight: 600;
-}
+.dayHeadLabel { display: flex; flex-direction: column; align-items: center; padding: 10px 0 6px; gap: 3px; }
+.dayAbbr { font-size: 11px; font-weight: 500; color: #70757a; text-transform: uppercase; letter-spacing: .5px; }
+.dayCircle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 400; color: #3c4043; cursor: default; }
+.dayCircleToday { background: #1a73e8; color: #fff; font-weight: 600; }
 
-/* All-day events */
-.allDayStrip {
-  padding: 0 2px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.allDayPill {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 5px;
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: opacity .12s;
-}
+.allDayStrip { padding: 0 2px 4px; display: flex; flex-direction: column; gap: 2px; }
+.allDayPill { font-size: 11px; font-weight: 500; padding: 2px 5px; border-radius: 3px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .12s; }
 .allDayPill:hover { opacity: .8; }
 
-/* Grille horaire */
 .wkGrid {
   display: grid;
   grid-template-columns: 52px repeat(7, 1fr);
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  position: relative;
+  flex: 1; overflow-y: auto; overflow-x: hidden; position: relative;
 }
 
-.hoursCol {
-  border-right: 1px solid #e0e0e0;
-  position: sticky;
-  left: 0;
-  background: #fff;
-  z-index: 4;
-}
-.hourSlot {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding-right: 8px;
-  position: relative;
-}
-.hourTxt {
-  font-size: 10px;
-  color: #70757a;
-  margin-top: -7px;
-  white-space: nowrap;
-}
+.hoursCol { border-right: 1px solid #e0e0e0; position: sticky; left: 0; background: #fff; z-index: 4; }
+.hourSlot { display: flex; align-items: flex-start; justify-content: flex-end; padding-right: 8px; position: relative; }
+.hourTxt { font-size: 10px; color: #70757a; margin-top: -7px; white-space: nowrap; }
 
-.dayCol {
-  position: relative;
-  border-right: 1px solid #e0e0e0;
-  min-width: 0;
-}
+.dayCol { position: relative; border-right: 1px solid #e0e0e0; min-width: 0; }
 .dayCol:last-child { border-right: none; }
 .dayColToday { background: #fafbff; }
 
-.hLine {
-  position: absolute;
-  left: 0; right: 0;
-  border-top: 1px solid #e0e0e0;
-  pointer-events: none;
-}
-.hhLine {
-  position: absolute;
-  left: 0; right: 0;
-  border-top: 1px dashed #f1f3f4;
-  pointer-events: none;
-}
+.hLine { position: absolute; left: 0; right: 0; border-top: 1px solid #e0e0e0; pointer-events: none; }
+.hhLine { position: absolute; left: 0; right: 0; border-top: 1px dashed #f1f3f4; pointer-events: none; }
 
-/* Ligne "maintenant" */
-.nowBar {
-  position: absolute;
-  left: 0; right: 0;
-  height: 2px;
-  background: #ea4335;
-  z-index: 3;
-  pointer-events: none;
-}
-.nowDot {
-  position: absolute;
-  left: -5px; top: -4px;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: #ea4335;
-}
+.nowBar { position: absolute; left: 0; right: 0; height: 2px; background: #ea4335; z-index: 3; pointer-events: none; }
+.nowDot { position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #ea4335; }
 
-/* Événements positionnés sur grille */
-.timedEv {
-  position: absolute;
-  border-radius: 4px;
-  padding: 3px 5px;
-  cursor: pointer;
-  overflow: hidden;
-  z-index: 2;
-  transition: box-shadow .12s, opacity .12s;
-  box-sizing: border-box;
-}
-.timedEv:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,.2);
-  z-index: 3;
-}
-.evTitle {
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.evSub {
-  font-size: 10px;
-  opacity: .85;
-  margin-top: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.timedEv { position: absolute; border-radius: 4px; padding: 3px 5px; cursor: pointer; overflow: hidden; z-index: 2; transition: box-shadow .12s, opacity .12s; box-sizing: border-box; }
+.timedEv:hover { box-shadow: 0 2px 8px rgba(0,0,0,.2); z-index: 3; }
+.evTitle { font-size: 11px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evSub { font-size: 10px; opacity: .85; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 
 /* ══════════════════════════════════════════
    VUE MOIS
    ══════════════════════════════════════════ */
 
-.monthWrap {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-}
+.monthWrap { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
 
-.mHeader {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  border-bottom: 1px solid #e0e0e0;
-  flex-shrink: 0;
-}
-.mDayHd {
-  padding: 8px 0;
-  text-align: center;
-  font-size: 11px;
-  font-weight: 500;
-  color: #70757a;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-}
+.mHeader { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
+.mDayHd { padding: 8px 0; text-align: center; font-size: 11px; font-weight: 500; color: #70757a; text-transform: uppercase; letter-spacing: .4px; }
 
 /* Grille = colonne de semaines */
-.mGrid {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-}
+.mGrid { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
 
-/* Chaque semaine = 1 row flex qui prend 1/N de l'espace */
-.mWeekRow {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  flex: 1;
-  min-height: 0;
-  border-bottom: 1px solid #e0e0e0;
-}
-.mWeekRow:last-child {
-  border-bottom: none;
-}
+/* Chaque semaine = 1 row flex */
+.mWeekRow { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; min-height: 0; border-bottom: 1px solid #e0e0e0; }
+.mWeekRow:last-child { border-bottom: none; }
 
 /* Cellule jour */
-.mCell {
-  border-right: 1px solid #e0e0e0;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  cursor: default;
-}
-.mCell:last-child {
-  border-right: none;
-}
-.mCell:hover {
-  background: #f8f9fa;
-}
-.mCellOtherMonth {
-  background: #fafafa;
-}
-.mCellOtherMonth:hover {
-  background: #f4f4f4;
-}
+.mCell { border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; cursor: default; }
+.mCell:last-child { border-right: none; }
+.mCell:hover { background: #f8f9fa; }
+.mCellOtherMonth { background: #fafafa; }
+.mCellOtherMonth:hover { background: #f4f4f4; }
 
-/* Ligne supérieure : numéro du jour */
-.mCellTop {
-  display: flex;
-  justify-content: center;
-  padding: 4px 0 2px;
-  flex-shrink: 0;
-}
+.mCellTop { display: flex; justify-content: center; padding: 4px 0 2px; flex-shrink: 0; }
 
-.mNum {
-  font-size: 12px;
-  color: #3c4043;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: default;
-  font-weight: 400;
-}
-.mNumToday {
-  background: #1a73e8;
-  color: #fff;
-  font-weight: 600;
-}
-.mNumOther {
-  color: #b0b4b8;
-}
+.mNum { font-size: 12px; color: #3c4043; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: default; font-weight: 400; }
+.mNumToday { background: #1a73e8; color: #fff; font-weight: 600; }
+.mNumOther { color: #b0b4b8; }
 
 /* Zone barres */
-.mBarsArea {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 0 4px;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
+.mBarsArea { display: flex; flex-direction: column; gap: 2px; padding: 0 0 4px; flex: 1; min-height: 0; overflow: hidden; }
 
-/* Slot de lane — hauteur fixe pour aligner entre cellules */
-.mBarSlot {
-  height: 20px;
-  flex-shrink: 0;
-  position: relative;
-}
+/* Slot de lane */
+.mBarSlot { height: 20px; flex-shrink: 0; position: relative; }
 
 /* Barre événement */
-.mBar {
-  height: 20px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  cursor: pointer;
-  transition: opacity .12s;
-  position: relative;
-  z-index: 1;
-}
-.mBar:hover {
-  opacity: .82;
-  box-shadow: 0 1px 4px rgba(0,0,0,.15);
-}
-.mBarTxt {
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-  padding-right: 4px;
-}
+.mBar { height: 20px; display: flex; align-items: center; overflow: hidden; cursor: pointer; transition: opacity .12s; position: relative; z-index: 1; }
+.mBar:hover { opacity: .82; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.mBarTxt { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; padding-right: 4px; }
 
 /* "+N autres" */
-.mMore {
-  border: none;
-  background: transparent;
-  color: #5f6368;
-  font-size: 10px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 3px;
-  text-align: left;
-  font-family: inherit;
-  flex-shrink: 0;
-  height: 18px;
-  line-height: 18px;
-}
-.mMore:hover {
-  background: #f1f3f4;
-  color: #3c4043;
-}
+.mMore { border: none; background: transparent; color: #5f6368; font-size: 10px; font-weight: 500; cursor: pointer; padding: 1px 6px; border-radius: 3px; text-align: left; font-family: inherit; flex-shrink: 0; height: 18px; line-height: 18px; }
+.mMore:hover { background: #f1f3f4; color: #3c4043; }
 
 
 /* ══════════════════════════════════════════
    POPOVER
    ══════════════════════════════════════════ */
 
-.popover {
-  position: fixed; z-index: 900;
-  background: #fff; border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0,0,0,.20);
-  width: 240px; overflow: hidden;
-  animation: fadeUp .15s ease;
-}
-.popHd {
-  display: flex; align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid #f1f3f4;
-  font-size: 13px; font-weight: 600; color: #3c4043;
-}
-.popHd button {
-  border: none; background: none; cursor: pointer;
-  color: #70757a; font-size: 14px; padding: 0;
-}
-.popItem {
-  padding: 8px 14px; border-bottom: 1px solid #f1f3f4;
-  cursor: pointer; transition: background .12s;
-}
+.popover { position: fixed; z-index: 900; background: #fff; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.20); width: 240px; overflow: hidden; animation: fadeUp .15s ease; }
+.popHd { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #f1f3f4; font-size: 13px; font-weight: 600; color: #3c4043; }
+.popHd button { border: none; background: none; cursor: pointer; color: #70757a; font-size: 14px; padding: 0; }
+.popItem { padding: 8px 14px; border-bottom: 1px solid #f1f3f4; cursor: pointer; transition: background .12s; }
 .popItem:hover { background: #f8f9fa; }
 .popItem:last-child { border-bottom: none; }
 .popName { font-size: 12px; font-weight: 600; color: #3c4043; }
@@ -495,36 +255,12 @@
    TOOLTIP DÉTAIL
    ══════════════════════════════════════════ */
 
-.tooltip {
-  position: fixed; z-index: 950;
-  background: #fff; border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.22);
-  width: 280px; overflow: hidden;
-  animation: fadeUp .15s ease;
-}
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+.tooltip { position: fixed; z-index: 950; background: #fff; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.22); width: 280px; overflow: hidden; animation: fadeUp .15s ease; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-.ttTop {
-  display: flex; align-items: flex-start;
-  justify-content: space-between;
-  padding: 14px 14px 10px;
-  border-bottom: 1px solid #f1f3f4;
-}
-.ttName {
-  font-size: 15px; font-weight: 600;
-  color: #3c4043; margin: 0; flex: 1;
-  line-height: 1.3; margin-right: 8px;
-}
-.ttX {
-  border: none; background: none; cursor: pointer;
-  color: #70757a; font-size: 16px;
-  width: 24px; height: 24px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; flex-shrink: 0; padding: 0;
-}
+.ttTop { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 14px 10px; border-bottom: 1px solid #f1f3f4; }
+.ttName { font-size: 15px; font-weight: 600; color: #3c4043; margin: 0; flex: 1; line-height: 1.3; margin-right: 8px; }
+.ttX { border: none; background: none; cursor: pointer; color: #70757a; font-size: 16px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; padding: 0; }
 .ttX:hover { background: #f1f3f4; }
 
 .ttBody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -533,13 +269,5 @@
 .ttIco  { font-size: 13px; flex-shrink: 0; }
 
 .ttTeam { display: flex; gap: 4px; flex-wrap: wrap; }
-.ttAvatar {
-  width: 26px; height: 26px; border-radius: 50%;
-  font-size: 9px; font-weight: 700; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15);
-}
-.ttDesc {
-  font-size: 12px; color: #5f6368; line-height: 1.5;
-  margin: 0; padding-top: 8px; border-top: 1px solid #f1f3f4;
-}
+.ttAvatar { width: 26px; height: 26px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.ttDesc { font-size: 12px; color: #5f6368; line-height: 1.5; margin: 0; padding-top: 8px; border-top: 1px solid #f1f3f4; }
