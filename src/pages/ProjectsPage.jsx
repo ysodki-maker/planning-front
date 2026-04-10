@@ -15,21 +15,23 @@ import Button               from '../components/common/Button';
 import Icon                 from '../components/common/Icon';
 import { Select }           from '../components/common/Field';
 
-import { STATUS_LIST, TYPE_LIST, PAGE_SIZE, STATUS_CONFIG } from '../utils/constants';
+import { TYPE_LIST, PAGE_SIZE, STATUS_CONFIG } from '../utils/constants';
 import styles from './ProjectsPage.module.css';
 
 export default function ProjectsPage() {
-  const { isAdmin }  = useAuth();
-  const toast        = useToast();
-  const { users }    = useUsers();
+  const { isAdmin, user } = useAuth();
+  const toast             = useToast();
+  const { users }         = useUsers();
 
   const { projects, pagination, loading, fetch } = useProjects({ limit: PAGE_SIZE });
 
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [type,   setType]   = useState('');
-  const [page,   setPage]   = useState(1);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [search,   setSearch]   = useState('');
+  const [status,   setStatus]   = useState('');
+  const [type,     setType]     = useState('');
+  const [page,     setPage]     = useState(1);
+  // "Mes projets" : visible pour admin, forcé pour non-admin
+  const [myOnly,   setMyOnly]   = useState(false);
+  const [viewMode, setViewMode] = useState('grid');
 
   const [showForm,      setShowForm]      = useState(false);
   const [editProject,   setEditProject]   = useState(null);
@@ -39,16 +41,25 @@ export default function ProjectsPage() {
   const [deleting,   setDeleting]   = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  // Non-admin : le backend filtre automatiquement, pas besoin de passer my=true
   const applyFilters = useCallback((overrides = {}) => {
     const params = { page, limit: PAGE_SIZE, search, status, type, ...overrides };
-    setPage(params.page);
+    // Pour l'admin uniquement : on peut envoyer my=true
+    if (isAdmin && myOnly && !('my' in overrides)) params.my = true;
+    setPage(params.page ?? page);
     fetch(params);
-  }, [page, search, status, type, fetch]);
+  }, [page, search, status, type, myOnly, isAdmin, fetch]);
 
   const handleSearch = (e) => { setSearch(e.target.value); applyFilters({ search: e.target.value, page: 1 }); };
-  const handleStatus = (e) => { setStatus(e.target.value); applyFilters({ status: e.target.value, page: 1 }); };
-  const handleType   = (e) => { setType(e.target.value);   applyFilters({ type: e.target.value, page: 1 }); };
+  const handleStatus = (v) => { setStatus(v); applyFilters({ status: v, page: 1 }); };
+  const handleType   = (e) => { setType(e.target.value); applyFilters({ type: e.target.value, page: 1 }); };
   const handlePage   = (p) => applyFilters({ page: p });
+
+  const toggleMyOnly = () => {
+    const next = !myOnly;
+    setMyOnly(next);
+    applyFilters({ my: next, page: 1 });
+  };
 
   const handleCreate = async (form) => {
     setSaving(true);
@@ -100,57 +111,69 @@ export default function ProjectsPage() {
 
   const totalPages = pagination?.totalPages || 1;
 
-  // Stats rapides
-  const stats = Object.entries(STATUS_CONFIG).map(([key, cfg]) => ({
-    key, cfg,
-    count: projects.filter(p => p.status === key).length,
-  }));
-
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Projets"
-        subtitle={pagination ? `${pagination.total} projet(s)` : ''}
-        actions={isAdmin && (
+        // Titre adapté selon le rôle
+        title={isAdmin ? 'Projets' : 'Mon planning'}
+        subtitle={pagination
+          ? isAdmin
+            ? `${pagination.total} projet(s) au total`
+            : `${pagination.total} projet(s) assigné(s)`
+          : ''}
+        actions={
           <Button variant="primary" icon={<Icon name="plus" size={14} />} onClick={() => setShowForm(true)}>
             Nouveau projet
           </Button>
-        )}
+        }
       />
 
-      {/* ── Stats rapides ── */}
+      {/* ── Chips de filtrage par statut ── */}
       <div className={styles.statsBar}>
-        {stats.map(({ key, cfg, count }) => (
-          <button
-            key={key}
-            className={`${styles.statChip} ${status === key ? styles.statChipActive : ''}`}
-            style={{ '--sc': cfg.dot }}
-            onClick={() => {
-              const next = status === key ? '' : key;
-              setStatus(next);
-              applyFilters({ status: next, page: 1 });
-            }}
-          >
-            <span className={styles.statDot} style={{ background: cfg.dot }} />
-            <span className={styles.statLabel}>{key}</span>
-            <span className={styles.statCount}>{count}</span>
-          </button>
-        ))}
+        {/* Toggle "Mes projets" — admin uniquement */}
+        {isAdmin && (
+          <>
+            <button
+              className={`${styles.statChip} ${myOnly ? styles.statChipActive : ''}`}
+              style={{ '--sc': '#6366f1' }}
+              onClick={toggleMyOnly}
+            >
+              <span className={styles.statDot} style={{ background: '#6366f1' }} />
+              <span className={styles.statLabel}>Mes projets</span>
+            </button>
+            <div className={styles.statDivider} />
+          </>
+        )}
+
+        {/* Chips statut */}
+        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+          const count = projects.filter(p => p.status === key).length;
+          return (
+            <button key={key}
+              className={`${styles.statChip} ${status === key ? styles.statChipActive : ''}`}
+              style={{ '--sc': cfg.dot }}
+              onClick={() => { const next = status === key ? '' : key; handleStatus(next); }}
+            >
+              <span className={styles.statDot} style={{ background: cfg.dot }} />
+              <span className={styles.statLabel}>{key}</span>
+              <span className={styles.statCount}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Barre de filtres ── */}
+      {/* ── Filtres ── */}
       <div className={styles.filters}>
         <div className={styles.searchWrap}>
           <Icon name="search" size={14} color="var(--ink-muted)" />
           <input
             className={styles.searchInput}
-            placeholder="Rechercher un projet, une ville…"
+            placeholder="Rechercher…"
             value={search} onChange={handleSearch}
           />
           {search && (
-            <button className={styles.searchClear} onClick={() => { setSearch(''); applyFilters({ search: '', page: 1 }); }}>
-              ×
-            </button>
+            <button className={styles.searchClear}
+              onClick={() => { setSearch(''); applyFilters({ search: '', page: 1 }); }}>×</button>
           )}
         </div>
 
@@ -159,20 +182,19 @@ export default function ProjectsPage() {
           {TYPE_LIST.map(t => <option key={t} value={t}>{t}</option>)}
         </Select>
 
-        {(search || status || type) && (
+        {(search || status || type || (isAdmin && myOnly)) && (
           <Button variant="ghost" size="sm" onClick={() => {
             setSearch(''); setStatus(''); setType('');
+            if (isAdmin) setMyOnly(false);
             fetch({ page: 1, limit: PAGE_SIZE });
           }}>Réinitialiser</Button>
         )}
 
-        {/* Toggle vue grille / liste */}
+        {/* Toggle grille / liste */}
         <div className={styles.viewToggle}>
           <button
             className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewBtnActive : ''}`}
-            onClick={() => setViewMode('grid')}
-            title="Vue grille"
-          >
+            onClick={() => setViewMode('grid')} title="Vue grille">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
               <rect x="0" y="0" width="6" height="6" rx="1"/>
               <rect x="8" y="0" width="6" height="6" rx="1"/>
@@ -182,9 +204,7 @@ export default function ProjectsPage() {
           </button>
           <button
             className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewBtnActive : ''}`}
-            onClick={() => setViewMode('list')}
-            title="Vue liste"
-          >
+            onClick={() => setViewMode('list')} title="Vue liste">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
               <line x1="2" y1="3" x2="12" y2="3"/>
               <line x1="2" y1="7" x2="12" y2="7"/>
@@ -199,17 +219,19 @@ export default function ProjectsPage() {
         <div className={styles.tableWrap}>
           <ProjectsTable
             projects={projects} loading={loading} isAdmin={isAdmin} viewMode="list"
+            currentUserId={user?.id}
             onEdit={p => setEditProject(p)}
-            onDelete={p => setDeleteTarget(p)}
-            onConfirm={p => setConfirmTarget(p)}
+            onDelete={p => isAdmin && setDeleteTarget(p)}
+            onConfirm={p => isAdmin && setConfirmTarget(p)}
           />
         </div>
       ) : (
         <ProjectsTable
           projects={projects} loading={loading} isAdmin={isAdmin} viewMode="grid"
+          currentUserId={user?.id}
           onEdit={p => setEditProject(p)}
-          onDelete={p => setDeleteTarget(p)}
-          onConfirm={p => setConfirmTarget(p)}
+          onDelete={p => isAdmin && setDeleteTarget(p)}
+          onConfirm={p => isAdmin && setConfirmTarget(p)}
         />
       )}
 
@@ -220,7 +242,8 @@ export default function ProjectsPage() {
             onClick={() => handlePage(page - 1)} disabled={page <= 1}>Précédent</Button>
           <div className={styles.pageNumbers}>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-              <button key={p} className={`${styles.pageBtn} ${p === page ? styles.pageBtnActive : ''}`}
+              <button key={p}
+                className={`${styles.pageBtn} ${p === page ? styles.pageBtnActive : ''}`}
                 onClick={() => handlePage(p)}>{p}</button>
             ))}
           </div>
@@ -231,16 +254,39 @@ export default function ProjectsPage() {
 
       {/* ── Modals ── */}
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Nouveau projet" width={620}>
-        <ProjectForm users={users} onSave={handleCreate} onCancel={() => setShowForm(false)} loading={saving} />
+        <ProjectForm
+          users={isAdmin ? users : []}
+          onSave={handleCreate}
+          onCancel={() => setShowForm(false)}
+          loading={saving}
+        />
       </Modal>
+
       <Modal isOpen={!!editProject} onClose={() => setEditProject(null)} title="Modifier le projet" width={620}>
-        {editProject && <ProjectForm initial={editProject} users={users} onSave={handleEdit} onCancel={() => setEditProject(null)} loading={saving} />}
+        {editProject && (
+          <ProjectForm
+            initial={editProject}
+            users={isAdmin ? users : []}
+            onSave={handleEdit}
+            onCancel={() => setEditProject(null)}
+            loading={saving}
+            isAdmin={isAdmin}
+          />
+        )}
       </Modal>
-      <Confirm isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete}
-        loading={deleting} title="Supprimer le projet"
-        message={`Supprimer "${deleteTarget?.name}" ? Cette action est irréversible.`} />
-      <ConfirmProjectModal isOpen={!!confirmTarget} project={confirmTarget}
-        onClose={() => setConfirmTarget(null)} onConfirm={handleConfirm} loading={confirming} />
+
+      <Confirm
+        isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete} loading={deleting}
+        title="Supprimer le projet"
+        message={`Supprimer "${deleteTarget?.name}" ? Cette action est irréversible.`}
+      />
+
+      <ConfirmProjectModal
+        isOpen={!!confirmTarget} project={confirmTarget}
+        onClose={() => setConfirmTarget(null)}
+        onConfirm={handleConfirm} loading={confirming}
+      />
     </div>
   );
 }
