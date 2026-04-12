@@ -29,22 +29,21 @@ export default function ProjectsPage() {
   const [status,   setStatus]   = useState('');
   const [type,     setType]     = useState('');
   const [page,     setPage]     = useState(1);
-  // "Mes projets" : visible pour admin, forcé pour non-admin
   const [myOnly,   setMyOnly]   = useState(false);
   const [viewMode, setViewMode] = useState('grid');
 
-  const [showForm,      setShowForm]      = useState(false);
-  const [editProject,   setEditProject]   = useState(null);
-  const [deleteTarget,  setDeleteTarget]  = useState(null);
-  const [confirmTarget, setConfirmTarget] = useState(null);
-  const [saving,     setSaving]     = useState(false);
-  const [deleting,   setDeleting]   = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [showForm,       setShowForm]       = useState(false);
+  const [editProject,    setEditProject]    = useState(null);
+  const [deleteTarget,   setDeleteTarget]   = useState(null);
+  const [confirmTarget,  setConfirmTarget]  = useState(null);
+  const [terminateTarget,setTerminateTarget]= useState(null); // projet à terminer
+  const [saving,      setSaving]      = useState(false);
+  const [deleting,    setDeleting]    = useState(false);
+  const [confirming,  setConfirming]  = useState(false);
+  const [terminating, setTerminating] = useState(false);
 
-  // Non-admin : le backend filtre automatiquement, pas besoin de passer my=true
   const applyFilters = useCallback((overrides = {}) => {
     const params = { page, limit: PAGE_SIZE, search, status, type, ...overrides };
-    // Pour l'admin uniquement : on peut envoyer my=true
     if (isAdmin && myOnly && !('my' in overrides)) params.my = true;
     setPage(params.page ?? page);
     fetch(params);
@@ -109,12 +108,24 @@ export default function ProjectsPage() {
     } finally { setConfirming(false); }
   };
 
+  // ── Terminer un projet (passe le statut à "Terminé") ─────────────────────
+  const handleTerminate = async () => {
+    setTerminating(true);
+    try {
+      await projectsApi.update(terminateTarget.id, { status: 'Terminé' });
+      toast.success(`"${terminateTarget.name}" marqué comme Terminé.`);
+      setTerminateTarget(null);
+      applyFilters({});
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur lors de la mise à jour.');
+    } finally { setTerminating(false); }
+  };
+
   const totalPages = pagination?.totalPages || 1;
 
   return (
     <div className={styles.page}>
       <PageHeader
-        // Titre adapté selon le rôle
         title={isAdmin ? 'Projets' : 'Mon planning'}
         subtitle={pagination
           ? isAdmin
@@ -128,9 +139,8 @@ export default function ProjectsPage() {
         }
       />
 
-      {/* ── Chips de filtrage par statut ── */}
+      {/* ── Chips de filtrage ── */}
       <div className={styles.statsBar}>
-        {/* Toggle "Mes projets" — admin uniquement */}
         {isAdmin && (
           <>
             <button
@@ -144,8 +154,6 @@ export default function ProjectsPage() {
             <div className={styles.statDivider} />
           </>
         )}
-
-        {/* Chips statut */}
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
           const count = projects.filter(p => p.status === key).length;
           return (
@@ -176,12 +184,10 @@ export default function ProjectsPage() {
               onClick={() => { setSearch(''); applyFilters({ search: '', page: 1 }); }}>×</button>
           )}
         </div>
-
         <Select value={type} onChange={handleType} style={{ width: 150, height: 36 }}>
           <option value="">Tous les types</option>
           {TYPE_LIST.map(t => <option key={t} value={t}>{t}</option>)}
         </Select>
-
         {(search || status || type || (isAdmin && myOnly)) && (
           <Button variant="ghost" size="sm" onClick={() => {
             setSearch(''); setStatus(''); setType('');
@@ -189,8 +195,6 @@ export default function ProjectsPage() {
             fetch({ page: 1, limit: PAGE_SIZE });
           }}>Réinitialiser</Button>
         )}
-
-        {/* Toggle grille / liste */}
         <div className={styles.viewToggle}>
           <button
             className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewBtnActive : ''}`}
@@ -223,6 +227,7 @@ export default function ProjectsPage() {
             onEdit={p => setEditProject(p)}
             onDelete={p => isAdmin && setDeleteTarget(p)}
             onConfirm={p => isAdmin && setConfirmTarget(p)}
+            onTerminate={p => isAdmin && setTerminateTarget(p)}
           />
         </div>
       ) : (
@@ -232,6 +237,7 @@ export default function ProjectsPage() {
           onEdit={p => setEditProject(p)}
           onDelete={p => isAdmin && setDeleteTarget(p)}
           onConfirm={p => isAdmin && setConfirmTarget(p)}
+          onTerminate={p => isAdmin && setTerminateTarget(p)}
         />
       )}
 
@@ -254,24 +260,13 @@ export default function ProjectsPage() {
 
       {/* ── Modals ── */}
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Nouveau projet" width={620}>
-        <ProjectForm
-          users={isAdmin ? users : []}
-          onSave={handleCreate}
-          onCancel={() => setShowForm(false)}
-          loading={saving}
-        />
+        <ProjectForm users={isAdmin ? users : []} onSave={handleCreate} onCancel={() => setShowForm(false)} loading={saving} />
       </Modal>
 
       <Modal isOpen={!!editProject} onClose={() => setEditProject(null)} title="Modifier le projet" width={620}>
         {editProject && (
-          <ProjectForm
-            initial={editProject}
-            users={isAdmin ? users : []}
-            onSave={handleEdit}
-            onCancel={() => setEditProject(null)}
-            loading={saving}
-            isAdmin={isAdmin}
-          />
+          <ProjectForm initial={editProject} users={isAdmin ? users : []}
+            onSave={handleEdit} onCancel={() => setEditProject(null)} loading={saving} isAdmin={isAdmin} />
         )}
       </Modal>
 
@@ -286,6 +281,16 @@ export default function ProjectsPage() {
         isOpen={!!confirmTarget} project={confirmTarget}
         onClose={() => setConfirmTarget(null)}
         onConfirm={handleConfirm} loading={confirming}
+      />
+
+      {/* Dialog de confirmation pour Terminer */}
+      <Confirm
+        isOpen={!!terminateTarget}
+        onClose={() => setTerminateTarget(null)}
+        onConfirm={handleTerminate}
+        loading={terminating}
+        title="Terminer le projet"
+        message={`Marquer "${terminateTarget?.name}" comme Terminé ? Le statut sera mis à jour et l'équipe sera notifiée.`}
       />
     </div>
   );
