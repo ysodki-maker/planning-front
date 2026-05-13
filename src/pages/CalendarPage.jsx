@@ -5,8 +5,6 @@ import { fmtDate, fmtTimeRange } from '../utils/helpers';
 import { StatusBadge } from '../components/common/Badge';
 import styles from './CalendarPage.module.css';
 
-const HOURS      = Array.from({ length: 24 }, (_, i) => i);
-const SLOT_H     = 64;
 const DAY_SHORT  = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 const MONTH_DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
 const today      = new Date();
@@ -19,7 +17,6 @@ function iso(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'
 function monday(date){const d=new Date(date),dd=d.getDay();d.setDate(d.getDate()+(dd===0?-6:1-dd));return d;}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function parseDate(s){if(!s)return null;const[y,m,d]=s.split('T')[0].split('-').map(Number);return new Date(y,m-1,d);}
-function timeMin(t){if(!t)return null;const[h,m]=t.slice(0,5).split(':').map(Number);return h*60+m;}
 function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
 function firstWd(y,m){return(new Date(y,m,1).getDay()+6)%7;}
 
@@ -76,9 +73,8 @@ export default function CalendarPage({ currentUser }) {
   const [tooltip, setTooltip] = useState(null);
   const [popover, setPopover] = useState(null);
   const [filters, setFilters] = useState(new Set());
-  // Admin : toggle "Mes projets" optionnel. Non-admin : forcé.
-  const [myOnly,  setMyOnly]  = useState(!isAdmin);
-  const [nowMin,  setNowMin]  = useState(0);
+  const [myOnly,     setMyOnly]     = useState(!isAdmin);
+  const [terminating,setTerminating] = useState(false);
 
   const gridRef    = useRef(null);
   const tooltipRef = useRef(null);
@@ -87,8 +83,6 @@ export default function CalendarPage({ currentUser }) {
   const MY=current.getFullYear(), MM=current.getMonth();
   const weekDays=useMemo(()=>view==='week'?Array.from({length:7},(_,i)=>addDays(monday(current),i)):[],[view,current]);
 
-  useEffect(()=>{const upd=()=>{const n=new Date();setNowMin(n.getHours()*60+n.getMinutes())};upd();const id=setInterval(upd,30000);return()=>clearInterval(id);},[]);
-  useEffect(()=>{if(view!=='week'||!gridRef.current)return;const top=Math.max(0,nowMin*(SLOT_H/60)-150);setTimeout(()=>gridRef.current?.scrollTo({top,behavior:'smooth'}),150);},[view]); // eslint-disable-line
   useEffect(()=>{
     setLoading(true);
     const s=view==='week'?iso(weekDays[0]??monday(today)):iso(new Date(MY,MM,1));
@@ -97,7 +91,15 @@ export default function CalendarPage({ currentUser }) {
     if(cache[k]){setProjects(cache[k]);setLoading(false);return;}
     projectsApi.getCalendar({start:s,end:e}).then(({data})=>{const list=(data?.data?.projects||[]).map(norm);setProjects(list);setCache(prev=>({...prev,[k]:list}));}).catch(()=>setProjects([])).finally(()=>setLoading(false));
   },[view,current]); // eslint-disable-line
-  useEffect(()=>{const fn=(e)=>{if(tooltipRef.current&&!tooltipRef.current.contains(e.target))setTooltip(null);if(popoverRef.current&&!popoverRef.current.contains(e.target))setPopover(null);};document.addEventListener('mousedown',fn);return()=>document.removeEventListener('mousedown',fn);},[]);
+
+  useEffect(()=>{
+    const fn=(e)=>{
+      if(tooltipRef.current&&!tooltipRef.current.contains(e.target))setTooltip(null);
+      if(popoverRef.current&&!popoverRef.current.contains(e.target))setPopover(null);
+    };
+    document.addEventListener('mousedown',fn);
+    return()=>document.removeEventListener('mousedown',fn);
+  },[]);
 
   const prev=()=>{if(view==='week')setCurrent(d=>addDays(d,-7));else setCurrent(new Date(MY,MM-1,1));};
   const next=()=>{if(view==='week')setCurrent(d=>addDays(d,7));else setCurrent(new Date(MY,MM+1,1));};
@@ -111,7 +113,6 @@ export default function CalendarPage({ currentUser }) {
 
   const toggleF=(k)=>setFilters(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});
 
-  // Filtrage selon rôle + statut
   const filtered=useMemo(()=>{
     let list=filters.size===0?projects:projects.filter(p=>filters.has(p.status));
     const applyMyFilter=!isAdmin||myOnly;
@@ -126,11 +127,18 @@ export default function CalendarPage({ currentUser }) {
 
   const openTT=(e,project)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTooltip({project,x:Math.min(r.right+10,window.innerWidth-300),y:Math.min(r.top,window.innerHeight-340)});};
 
-  const timedLayout=(events)=>{
-    const sorted=[...events].sort((a,b)=>timeMin(a.heure_debut)-timeMin(b.heure_debut));
-    const cols=[];
-    for(const ev of sorted){const sm=timeMin(ev.heure_debut)??0,em=timeMin(ev.heure_fin)??(sm+60);let placed=false;for(let ci=0;ci<cols.length;ci++){const last=cols[ci][cols[ci].length-1],lm=timeMin(last.heure_fin)??(timeMin(last.heure_debut)||0)+60;if(sm>=lm){cols[ci].push(ev);placed=true;break;}}if(!placed)cols.push([ev]);}
-    const total=cols.length,result=[];cols.forEach((col,ci)=>col.forEach(ev=>result.push({ev,ci,total})));return result;
+  const handleTerminate = async (project) => {
+    setTerminating(true);
+    try {
+      await projectsApi.update(project.id, { status: 'Terminé' });
+      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, status: 'Terminé' } : p));
+      setCache({});
+      setTooltip(prev => prev ? { ...prev, project: { ...prev.project, status: 'Terminé' } } : null);
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour :', err);
+    } finally {
+      setTerminating(false);
+    }
   };
 
   return (
@@ -148,13 +156,11 @@ export default function CalendarPage({ currentUser }) {
           <span className={styles.periodLabel}>{label}</span>
         </div>
         <div className={styles.hRight}>
-          {/* Toggle "Mes projets" — admin seulement */}
           {isAdmin && (
             <button className={`${styles.myOnlyBtn} ${myOnly?styles.myOnlyActive:''}`} onClick={()=>setMyOnly(v=>!v)}>
               <span>👤</span> Mes projets
             </button>
           )}
-          {/* Label fixe — non-admin */}
           {!isAdmin && <span className={styles.myOnlyLabel}><span>👤</span> Mon planning</span>}
           <div className={styles.filterRow}>
             {Object.entries(STATUS_CONFIG).map(([k,cfg])=>(
@@ -172,46 +178,58 @@ export default function CalendarPage({ currentUser }) {
         </div>
       </div>
 
-      {loading?<div className={styles.loader}><div className={styles.spin}/></div>:view==='week'?(
+      {loading ? (
+        <div className={styles.loader}><div className={styles.spin}/></div>
+      ) : view === 'week' ? (
         <div className={styles.weekWrap}>
+          {/* Header jours */}
           <div className={styles.wkHeader}>
-            <div className={styles.gutterTop}/>
             {weekDays.map((d,i)=>{
-              const isoDay=iso(d),isT=isoDay===iso(today),allDay=forDay(isoDay).filter(p=>!p.heure_debut||!p.heure_fin);
-              return(
+              const isoDay=iso(d), isT=isoDay===iso(today);
+              return (
                 <div key={i} className={styles.wkDayHead}>
                   <div className={styles.dayHeadLabel}>
                     <span className={styles.dayAbbr}>{DAY_SHORT[d.getDay()]}</span>
                     <span className={`${styles.dayCircle} ${isT?styles.dayCircleToday:''}`}>{d.getDate()}</span>
                   </div>
-                  {allDay.length>0&&<div className={styles.allDayStrip}>{allDay.map(p=><div key={p.id} className={styles.allDayPill} style={{background:hexAlpha(p._color,.15),borderLeft:`3px solid ${p._color}`,color:p._color}} onClick={e=>openTT(e,p)}>{p.name}</div>)}</div>}
                 </div>
               );
             })}
           </div>
+
+          {/* Grille projets par jour */}
           <div className={styles.wkGrid} ref={gridRef}>
-            <div className={styles.hoursCol}>{HOURS.map(h=><div key={h} className={styles.hourSlot} style={{height:SLOT_H}}>{h>0&&<span className={styles.hourTxt}>{h}:00</span>}</div>)}</div>
             {weekDays.map((d,di)=>{
-              const isoDay=iso(d),isT=isoDay===iso(today),timed=forDay(isoDay).filter(p=>p.heure_debut&&p.heure_fin),layout=timedLayout(timed);
-              return(
+              const isoDay=iso(d), isT=isoDay===iso(today);
+              const dayProjects=forDay(isoDay);
+              return (
                 <div key={di} className={`${styles.dayCol} ${isT?styles.dayColToday:''}`}>
-                  {HOURS.map(h=><div key={h} className={styles.hLine} style={{top:h*SLOT_H}}/>)}
-                  {HOURS.map(h=><div key={`hh${h}`} className={styles.hhLine} style={{top:h*SLOT_H+SLOT_H/2}}/>)}
-                  {isT&&<div className={styles.nowBar} style={{top:nowMin*(SLOT_H/60)}}><div className={styles.nowDot}/></div>}
-                  {layout.map(({ev:p,ci,total})=>{
-                    const sm=timeMin(p.heure_debut)??0,em=timeMin(p.heure_fin)??(sm+60),top=sm*(SLOT_H/60),h=Math.max((em-sm)*(SLOT_H/60),24);
-                    return<div key={p.id} className={styles.timedEv} style={{top,height:h,left:`calc(${ci}*(100%-2px)/${total}+1px)`,width:`calc((100%-2px)/${total})`,background:hexAlpha(p._color,.18),borderLeft:`3px solid ${p._color}`,color:p._color}} onClick={e=>openTT(e,p)}>
-                      <div className={styles.evTitle}>{p.name}</div>
-                      {h>32&&<div className={styles.evSub}>{p.heure_debut?.slice(0,5)} – {p.heure_fin?.slice(0,5)}</div>}
-                      {h>48&&p.ville&&<div className={styles.evSub}>📍 {p.ville}</div>}
-                    </div>;
-                  })}
+                  {dayProjects.map(p=>(
+                    <div
+                      key={p.id}
+                      className={styles.dayCard}
+                      style={{
+                        background: hexAlpha(p._color, .14),
+                        borderLeft: `3px solid ${p._color}`,
+                        color: p._color,
+                      }}
+                      onClick={e=>openTT(e,p)}
+                    >
+                      <div className={styles.dcTitle}>{p.name}</div>
+                      {(p.heure_debut||p.heure_fin) && (
+                        <div className={styles.dcSub}>
+                          🕐 {p.heure_debut?.slice(0,5)}{p.heure_fin ? ` – ${p.heure_fin.slice(0,5)}` : ''}
+                        </div>
+                      )}
+                      {p.ville && <div className={styles.dcSub}>📍 {p.ville}</div>}
+                    </div>
+                  ))}
                 </div>
               );
             })}
           </div>
         </div>
-      ):(
+      ) : (
         <div className={styles.monthWrap}>
           <div className={styles.mHeader}>{MONTH_DAYS.map(d=><div key={d} className={styles.mDayHd}>{d}</div>)}</div>
           <div className={styles.mGrid}>
@@ -269,6 +287,15 @@ export default function CalendarPage({ currentUser }) {
           </div>
           {tooltip.project.assigned_users?.length>0&&<div className={styles.ttTeam}>{tooltip.project.assigned_users.map(u=><span key={u.id} className={styles.ttAvatar} style={{background:u.color||'#6366f1'}} title={u.name}>{(u.avatar||u.name?.slice(0,2)||'?').toUpperCase()}</span>)}</div>}
           {tooltip.project.description&&<p className={styles.ttDesc}>{tooltip.project.description}</p>}
+          {tooltip.project.status !== 'Terminé' && (
+            <button
+              className={styles.ttTerminateBtn}
+              disabled={terminating}
+              onClick={() => handleTerminate(tooltip.project)}
+            >
+              {terminating ? 'Mise à jour…' : '✓ Marquer comme Terminé'}
+            </button>
+          )}
         </div>
       </div>}
     </div>
